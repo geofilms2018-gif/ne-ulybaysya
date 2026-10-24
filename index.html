@@ -61,6 +61,9 @@
   #lobby{gap:10px}
   .scr>*{flex-shrink:0} #lobby>:first-child,#home>:first-child{margin-top:auto} #lobby>:last-child,#home>:last-child{margin-bottom:auto}
   #game{overflow:hidden}
+  #toast{position:fixed;left:50%;bottom:calc(90px + env(safe-area-inset-bottom));transform:translateX(-50%);background:#262626;color:#fff;padding:10px 16px;border-radius:12px;font-size:14px;z-index:50;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90vw;text-align:center}
+  #toast.on{opacity:1}
+  #roomCode{cursor:pointer}
   #btnStart{position:sticky;bottom:calc(8px + env(safe-area-inset-bottom));z-index:5}
   #lobby .bigcode{font-size:40px}
   .ring b img{width:100%;height:100%;border-radius:50%;object-fit:cover}
@@ -121,7 +124,8 @@
   <input id="name" placeholder="Твоё имя" maxlength="14" autocomplete="off">
   <button class="grad" id="btnPlay" style="font-size:20px;padding:18px">➕ Создать комнату</button>
   <p style="margin:4px 0 -4px">или войди к друзьям</p>
-  <div class="row"><input id="code" class="code" placeholder="КОД" maxlength="4" autocomplete="off" autocapitalize="characters"><button class="sec" id="btnJoin" style="max-width:140px">Войти</button></div>
+  <div class="row"><input id="code" class="code" placeholder="КОД" maxlength="12" autocomplete="off" autocapitalize="characters"><button class="sec" id="btnPaste" style="max-width:110px;font-size:14px">📋 Вставить</button></div>
+  <button class="sec" id="btnJoin">Войти</button>
   <p id="inviteHint" style="display:none"></p>
   <p id="homeErr" class="err"></p>
   <button class="sec" id="btnBrowser" style="display:none">🌐 Открыть в браузере</button>
@@ -130,9 +134,9 @@
 <section class="scr" id="lobby">
   <span class="livepill">● LIVE скоро</span>
   <p>Код комнаты</p>
-  <div class="bigcode" id="roomCode">----</div>
+  <div class="bigcode" id="roomCode" title="Нажми — скопировать">----</div>
   <p id="lobbyHint"></p>
-  <button class="sec" id="btnInvite" style="display:none">📲 Позвать друзей</button>
+  <div class="row"><button class="grad" id="btnInvite">📲 Пригласить</button><button class="sec" id="btnCopy" style="max-width:150px">📋 Код</button></div>
   <div class="modes" id="modes" style="display:none"><button class="sec on" id="mNear">🤝 Рядом</button><button class="sec" id="mFar">🌍 Дистанционно</button></div>
   <p id="modeHint">Режим: 🤝 рядом — без голоса</p>
   <div class="pvwrap"><video id="pv" playsinline muted autoplay></video><video id="pvMask" playsinline muted autoplay style="display:none"></video></div>
@@ -180,6 +184,7 @@
   </div>
 </section>
 
+<div id="toast"></div>
 <audio id="sDun" src="zvuki/dundun.mp3" preload="auto"></audio>
 <audio id="sRev" src="zvuki/reveal.mp3" preload="auto"></audio>
 
@@ -342,9 +347,13 @@ function detectRaw(v){
   if (!bs) return null;
   const b = {};
   for (const c of bs.categories) b[c.categoryName] = c.score;
-  // открытый рот («а-а», зевок, разговор) тоже поднимает mouthSmile — вычитаем раскрытую челюсть и вытянутые губы
-  const smile = ((b.mouthSmileLeft || 0) + (b.mouthSmileRight || 0)) / 2;
   dbg.old = Math.max(dbg.old, b.mouthSmileLeft || 0, b.mouthSmileRight || 0); dbg.jaw = Math.max(dbg.jaw, b.jawOpen || 0);
+  return smileOf(b);
+}
+// оценка улыбки по блендшейпам — одна на игру и на тесты (__nu.smileOf)
+// открытый рот («а-а», зевок, разговор) тоже поднимает mouthSmile — вычитаем раскрытую челюсть и вытянутые губы
+function smileOf(b){
+  const smile = ((b.mouthSmileLeft || 0) + (b.mouthSmileRight || 0)) / 2;
   return Math.max(0, smile - 1.2 * Math.max(0, (b.jawOpen || 0) - 0.2) - 2 * Math.max(0, (b.mouthFunnel || 0) - 0.08) - Math.max(0, (b.mouthPucker || 0) - 0.15));
 }
 
@@ -731,7 +740,7 @@ setInterval(() => { if (room && relayUrl && (!rws || rwsRoom !== room)) relayCon
 // ---------- видео всех игроков (как FaceTime) ----------
 // Сначала каждый звонит каждому напрямую. Если гость↔гость не соединились за 3 с (сотовый NAT),
 // гость просит создателя переслать ему видео этого игрока: с создателем связь есть у всех.
-window.__nu = {dbg, aud: () => roster.filter(r => r.id !== myId).map(r => audioFlowing(r.id) ? 'rtc' : Date.now() - (pcmLast.get(r.id) || 0) < 3000 ? 'pcm' : 0), get relay(){ return !!(rws && rws.readyState === 1); }, get fps(){ return detFps; }, out: () => outCv ? outCv.toDataURL('image/png') : '', mask: id => setMask(id)};   // для тестов
+window.__nu = {dbg, smileOf, thr: base => Math.max(SMILE_MIN, base + SMILE_OVER), aud: () => roster.filter(r => r.id !== myId).map(r => audioFlowing(r.id) ? 'rtc' : Date.now() - (pcmLast.get(r.id) || 0) < 3000 ? 'pcm' : 0), get relay(){ return !!(rws && rws.readyState === 1); }, get fps(){ return detFps; }, out: () => outCv ? outCv.toDataURL('image/png') : '', mask: id => setMask(id)};   // для тестов
 const NOMESH = new URLSearchParams(location.search).has('nomesh');   // для теста запасного пути
 const remote = new Map();    // id -> MediaStream, пришедший напрямую
 const relays = new Map();    // гость: id -> звонок-пересылка; создатель: 'гость|id' -> звонок
@@ -1000,7 +1009,7 @@ async function createRoom(){
 
 async function joinRoom(){
   myName = getName();
-  const code = $('code').value.trim().toUpperCase();
+  const code = pickCode($('code').value);
   if (!/^[A-Z]{4}$/.test(code)){ $('homeErr').textContent = 'Введи код из 4 букв'; return; }
   isHost = false; inRoom = false;
   await prepareDevice();
@@ -1022,7 +1031,7 @@ async function joinRoom(){
   lastHost = Date.now();
   $('roomCode').textContent = code;
   $('lobbyHint').textContent = 'Ждём, пока создатель нажмёт СТАРТ';
-  $('btnStart').style.display = 'none'; $('btnInvite').style.display = 'none';
+  $('btnStart').style.display = 'none';
   if (!spectate()) show('lobby');
   startVideo();
 }
@@ -1067,18 +1076,63 @@ if (INVITE.length === 4){
   $('inviteHint').style.display = 'block'; $('inviteHint').textContent = 'Тебя позвали в комнату ' + INVITE + ' — жми «Войти»';
 }
 $('btnPlay').onclick = guard(createRoom);
-$('btnInvite').onclick = async () => {
-  const code = $('roomCode').textContent, text = 'Го в эфир, кто первый улыбнётся — проиграл 😐';
-  if (TG && !TG_APP){   // пока нет /newapp: зовём в бота и даём код
-    const t = 'Го в эфир «Не улыбайся» 😐 Открой @' + TG_BOT + ' → «Играть» → код ' + code;
-    TG.openTelegramLink('https://t.me/share/url?url=' + encodeURIComponent('https://t.me/' + TG_BOT) + '&text=' + encodeURIComponent(t)); return;
+// ---------- приглашение: Telegram → системное «поделиться» → копия текста ----------
+function buildInvite(code){
+  // TG_APP появится после /newapp — тогда в приглашении будет прямая ссылка с кодом (?startapp=)
+  const url = TG_APP ? 'https://t.me/' + TG_BOT + '/' + TG_APP + '?startapp=' + code : 'https://t.me/' + TG_BOT;
+  const text = 'Го в «Не улыбайся» 😐 Открой @' + TG_BOT + ' → «Играть» → код ' + code;
+  return {url, text, full: text + '\n' + url};
+}
+let toastT = 0;
+function toast(t){ const e = $('toast'); e.textContent = t; e.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => e.classList.remove('on'), 2200); }
+async function copyText(t){
+  try { if (navigator.clipboard && navigator.clipboard.writeText){ await navigator.clipboard.writeText(t); return true; } } catch(e){}
+  // в WebView Телеграма буфер бывает закрыт — старый способ через выделение
+  try {
+    const a = document.createElement('textarea'); a.value = t; a.setAttribute('readonly', ''); a.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+    document.body.appendChild(a); a.select(); a.setSelectionRange(0, t.length);
+    const ok = document.execCommand('copy'); a.remove(); return ok;
+  } catch(e){ return false; }
+}
+async function invite(){
+  const code = $('roomCode').textContent, inv = buildInvite(code);
+  if (TG && TG.openTelegramLink && (!TG.isVersionAtLeast || TG.isVersionAtLeast('6.1'))){
+    try { TG.openTelegramLink('https://t.me/share/url?url=' + encodeURIComponent(inv.url) + '&text=' + encodeURIComponent(inv.text)); return 'tg'; } catch(e){}
   }
-  const url = TG_BOT && TG_APP ? 'https://t.me/' + TG_BOT + '/' + TG_APP + '?startapp=' + code : location.origin + location.pathname + '?r=' + code;
-  if (TG){ TG.openTelegramLink('https://t.me/share/url?url=' + encodeURIComponent(url) + '&text=' + encodeURIComponent(text)); return; }
-  try { if (navigator.share){ await navigator.share({title: 'Не улыбайся', text, url}); return; } } catch(e){ return; }
-  try { await navigator.clipboard.writeText(url); $('btnInvite').textContent = '✅ Ссылка скопирована'; } catch(e){ prompt('Ссылка для друзей', url); }
+  if (navigator.share){
+    try { await navigator.share({text: inv.full}); return 'share'; }
+    catch(e){ if (e && e.name === 'AbortError') return 'cancel'; }
+  }
+  if (await copyText(inv.full)){ toast('Приглашение скопировано — вставь в любой чат'); return 'copy'; }
+  prompt('Скопируй приглашение', inv.full); return 'prompt';
+}
+async function copyCode(){
+  const code = $('roomCode').textContent;
+  if (!/^[A-Z]{4}$/.test(code)) return;
+  toast(await copyText(code) ? 'Код ' + code + ' скопирован' : 'Код: ' + code);
+}
+$('btnInvite').onclick = () => { invite(); };
+$('btnCopy').onclick = copyCode; $('roomCode').onclick = copyCode;
+// ---------- вход по коду: любой регистр, мусор отбрасываем, сам входит, как только код набран ----------
+function pickCode(t){
+  const s = String(t || '').toUpperCase();
+  const m = s.match(/(?:КОД|CODE|R=)\s*[:\-]?\s*([A-Z]{4})(?![A-Z])/) || s.match(/(?:^|[^A-Z])([A-Z]{4})(?![A-Z])/);
+  return m ? m[1] : s.replace(/[^A-Z]/g, '').slice(0, 4);
+}
+let autoJoinT = 0;
+function codeTyped(){
+  const c = pickCode($('code').value); if ($('code').value !== c) $('code').value = c;
+  clearTimeout(autoJoinT);
+  if (c.length === 4) autoJoinT = setTimeout(() => { if ($('home').classList.contains('on') && !joinBusy) $('btnJoin').click(); }, 600);
+}
+$('code').addEventListener('input', codeTyped);
+if (!(navigator.clipboard && navigator.clipboard.readText)) $('btnPaste').style.display = 'none';
+$('btnPaste').onclick = async () => {
+  try { $('code').value = pickCode(await navigator.clipboard.readText()); codeTyped(); }
+  catch(e){ $('homeErr').textContent = 'Не дали прочитать буфер — вставь код вручную'; }
 };
-$('btnJoin').onclick = guard(joinRoom);
+let joinBusy = false;
+$('btnJoin').onclick = async () => { if (joinBusy) return; joinBusy = true; try { await guard(joinRoom)(); } finally { joinBusy = false; } };
 $('mNear').onclick = () => { unlockAudio(); if (voice){ setVoice(false); sendLobby(); } };
 $('mFar').onclick = () => { unlockAudio(); if (!voice){ setVoice(true); sendLobby(); } };
 $('btnMic').onclick = toggleMic; $('meMic').onclick = toggleMic;
