@@ -66,6 +66,9 @@
   #grid{position:absolute;inset:0;display:grid;gap:2px;background:#000;grid-template-columns:1fr;grid-auto-rows:1fr}
   #grid.n4,#grid.n5,#grid.n6{grid-template-columns:1fr 1fr}
   .tile{position:relative;overflow:hidden;background:#111}
+  .tile video{width:100%;height:100%;object-fit:cover}
+  .ph{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--mut);font-size:13px}
+  .tile.live .ph{display:none}
   .tname{position:absolute;left:10px;bottom:8px;z-index:1;font-weight:700;font-size:13px;background:#0007;padding:3px 8px;border-radius:10px}
   #prepAv{position:absolute;top:22%;left:0;right:0;display:flex;justify-content:center;gap:14px;z-index:4;pointer-events:none}
   #prepAv .ring{width:76px;height:76px;opacity:0}
@@ -376,6 +379,7 @@ function hostNet(m){
   if (m.type === 'ready'){ p.avatar = okAvatar(m.avatar); p.ready = true; sendLobby(); }
   if (m.type === 'react') broadcast({type:'react', e: String(m.e).slice(0, 4), by: id});
   if (m.type === 'smile') hostGotSmile(p.name, m.photo, m.ms, m.why);
+  if (m.type === 'relay') hostRelay(id, String(m.of));
   if (m.type === 'bye'){ players.delete(id); sendLobby(); }
 }
 // гость: слушает создателя
@@ -386,7 +390,7 @@ function hello(){
   if (myReady) toHost({type:'ready', avatar: myAvatar});
 }
 function guestNet(m){
-  lastHost = Date.now();
+  lastHost = Date.now(); hostId = m.from;
   if (m.type === 'gone'){ $('lobbyErr').textContent = 'Создатель комнаты вышел из игры'; return; }
   if (m.type === 'lobby'){
     const me = m.players.some(p => p.id === myId);
@@ -415,33 +419,78 @@ window.addEventListener('pagehide', () => { if (room) pub(isHost ? 'all' : 'h', 
 function avHtml(p){ return p.avatar ? '<img src="' + p.avatar + '" alt="">' : esc(ini(p.name)); }
 function okAvatar(a){ return typeof a === 'string' && a.startsWith('data:image/jpeg') && a.length < 80000 ? a : ''; }
 
-// ---------- видео всех игроков (как FaceTime): каждый с каждым напрямую ----------
+// ---------- видео всех игроков (как FaceTime) ----------
+// Сначала каждый звонит каждому напрямую. Если гость↔гость не соединились за 5 с (сотовый NAT),
+// гость просит создателя переслать ему видео этого игрока: с создателем связь есть у всех.
+const NOMESH = new URLSearchParams(location.search).has('nomesh');   // для теста запасного пути
+const remote = new Map();    // id -> MediaStream, пришедший напрямую
+const relays = new Map();    // гость: id -> звонок-пересылка; создатель: 'гость|id' -> звонок
+const since = new Map(), askedAt = new Map();
+let hostId = '';
 function layoutGrid(){ const g = $('grid'); g.className = 'n' + g.children.length; }
-function addTile(id, st){
-  let t = document.querySelector('.tile[data-id="' + CSS.escape(id) + '"]');
+function tileOf(id){ return document.querySelector('.tile[data-id="' + CSS.escape(id) + '"]'); }
+function ensureTile(id){
+  let t = tileOf(id);
   if (!t){
     t = document.createElement('div'); t.className = 'tile'; t.dataset.id = id;
-    t.innerHTML = '<video playsinline autoplay muted></video><span class="tname"></span>';
+    t.innerHTML = '<video playsinline autoplay muted></video><div class="ph"><div class="ring"><b></b></div><small>подключаю видео…</small></div><span class="tname"></span>';
     $('grid').appendChild(t);
   }
-  const v = t.querySelector('video'); v.srcObject = st; v.play().catch(() => {});
-  const p = roster.find(r => r.id === id); t.querySelector('.tname').textContent = p ? p.name : '';
-  layoutGrid();
+  const p = roster.find(r => r.id === id);
+  if (p){ t.querySelector('.tname').textContent = p.name; t.querySelector('.ph b').innerHTML = avHtml(p); }
+  const w = since.get(id);
+  t.querySelector('.ph small').textContent = w && Date.now() - w > 8000 ? 'нет связи' : 'подключаю видео…';
+  return t;
 }
-function removeTile(id){ const t = document.querySelector('.tile[data-id="' + CSS.escape(id) + '"]'); if (t) t.remove(); calls.delete(id); layoutGrid(); }
+function setTileStream(id, st){
+  const t = ensureTile(id), v = t.querySelector('video');
+  if (v.srcObject !== st){ v.srcObject = st; v.play().catch(() => {}); }
+  t.classList.add('live'); layoutGrid();
+}
+function clearTile(id, st){
+  const t = tileOf(id); if (!t) return;
+  const v = t.querySelector('video'); if (st && v.srcObject !== st) return;
+  v.srcObject = null; t.classList.remove('live');
+  if (remote.has(id)) setTileStream(id, remote.get(id));
+  else if (relays.has(id) && relays.get(id).st) setTileStream(id, relays.get(id).st);
+}
 function wireCall(c, id){
   if (!c) return;
   calls.set(id, c);
-  // нет картинки за 10 с — бросаем звонок, следующий пульс позвонит заново
-  const to = setTimeout(() => { if (calls.get(id) === c){ calls.delete(id); try { c.close(); } catch(e){} } }, 10000);
-  c.on('stream', st => { clearTimeout(to); if (calls.get(id) === c) addTile(id, st); });
-  const end = () => { clearTimeout(to); if (calls.get(id) === c) removeTile(id); };
+  // нет картинки за 6 с — бросаем звонок, следующий пульс позвонит заново
+  const to = setTimeout(() => { if (calls.get(id) === c){ calls.delete(id); try { c.close(); } catch(e){} } }, 6000);
+  c.on('stream', st => {
+    clearTimeout(to); if (calls.get(id) !== c) return;
+    remote.set(id, st); setTileStream(id, st);
+    if (!isHost && relays.has(id)){ const r = relays.get(id); relays.delete(id); try { r.close(); } catch(e){} }   // прямое пришло — пересылка не нужна
+  });
+  const end = () => { clearTimeout(to); if (calls.get(id) !== c) return; calls.delete(id); const st = remote.get(id); remote.delete(id); clearTile(id, st); };
   c.on('close', end); c.on('error', end);
 }
 function onIncomingCall(c){
+  const of = c.metadata && c.metadata.of;
+  if (of){   // создатель пересылает видео игрока of
+    const old = relays.get(of); if (old) try { old.close(); } catch(e){}
+    relays.set(of, c); c.answer();
+    c.on('stream', st => { c.st = st; if (relays.get(of) === c && !remote.has(of)) setTileStream(of, st); });
+    const end = () => { if (relays.get(of) === c){ relays.delete(of); clearTile(of, c.st); } };
+    c.on('close', end); c.on('error', end);
+    return;
+  }
   const id = c.peer.slice(PREFIX.length), old = calls.get(id);
   calls.delete(id); if (old) try { old.close(); } catch(e){}
   c.answer(stream); wireCall(c, id);
+}
+// создатель: гость g не видит игрока of — шлём ему видео of со своего телефона
+function hostRelay(g, of){
+  const k = g + '|' + of, st = remote.get(of);
+  if (!peer || !peer.open || !st || relays.has(k) || !players.has(g)) return;
+  const c = peer.call(PREFIX + g, st, {metadata: {of}});
+  if (!c) return;
+  relays.set(k, c);
+  const end = () => { if (relays.get(k) === c) relays.delete(k); };
+  c.on('close', end); c.on('error', end);
+  setTimeout(() => { if (relays.get(k) === c && !c.open){ relays.delete(k); try { c.close(); } catch(e){} } }, 8000);
 }
 function startVideo(){
   if (peer && !peer.destroyed) return;
@@ -456,14 +505,26 @@ function startVideo(){
   });
 }
 function syncCalls(){
-  if (!peer || !peer.open || !stream) return;
   const ids = new Set(roster.map(r => r.id));
-  for (const id of [...calls.keys()]) if (!ids.has(id)){ try { calls.get(id).close(); } catch(e){} removeTile(id); }
+  for (const id of [...since.keys()]) if (!ids.has(id)) since.delete(id);
+  for (const r of roster) if (r.id !== myId && !since.has(r.id)) since.set(r.id, Date.now());
   for (const t of document.querySelectorAll('.tile:not([data-id="me"])')) if (!ids.has(t.dataset.id)) t.remove();
-  // звонит тот, у кого id «меньше», — чтобы двое не звонили друг другу одновременно
-  for (const r of roster) if (r.id !== myId && !calls.has(r.id) && myId < r.id) wireCall(peer.call(PREFIX + r.id, stream), r.id);
-  for (const t of document.querySelectorAll('.tile')){ const p = roster.find(r => r.id === t.dataset.id); if (p) t.querySelector('.tname').textContent = p.name; }
+  for (const r of roster) if (r.id !== myId) ensureTile(r.id);
   layoutGrid();
+  if (!peer || !peer.open || !stream) return;
+  for (const id of [...calls.keys()]) if (!ids.has(id)){ try { calls.get(id).close(); } catch(e){} calls.delete(id); remote.delete(id); }
+  for (const [k, c] of [...relays]) if (!ids.has(isHost ? k.split('|')[0] : k) || (isHost && !ids.has(k.split('|')[1]))){ relays.delete(k); try { c.close(); } catch(e){} }
+  // звонит тот, у кого id «меньше», — чтобы двое не звонили друг другу одновременно
+  for (const r of roster){
+    if (r.id === myId || calls.has(r.id) || myId > r.id) continue;
+    if (NOMESH && !isHost && r.id !== hostId) continue;
+    wireCall(peer.call(PREFIX + r.id, stream), r.id);
+  }
+  if (!isHost) for (const r of roster){
+    if (r.id === myId || r.id === hostId || remote.has(r.id) || relays.has(r.id)) continue;
+    if (Date.now() - since.get(r.id) < 5000 || Date.now() - (askedAt.get(r.id) || 0) < 6000) continue;
+    askedAt.set(r.id, Date.now()); toHost({type:'relay', of: r.id});
+  }
 }
 
 function reportSmile(photo, why){
@@ -569,7 +630,7 @@ async function createRoom(){
   await prepareDevice();
   $('status').textContent = 'Создаю комнату…';
   const code = code4();
-  onNet = hostNet;
+  onNet = hostNet; hostId = myId;
   await netOpen(code, 'h', 'all', {type:'gone', mid: rid()});
   players.clear();
   players.set(myId, {name: myName, avatar: myAvatar, ready: myReady, seen: Infinity});
