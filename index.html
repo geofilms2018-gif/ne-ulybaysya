@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#111">
+<title>Не улыбайся</title>
+<style>
+  :root{--bg:#000;--fg:#fff;--mut:#a8a8a8;--live:#ff0050;--ig:linear-gradient(45deg,#feda75 0%,#fa7e1e 25%,#d62976 50%,#962fbf 75%,#4f5bd5 100%)}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",system-ui,sans-serif;overflow:hidden}
+  .scr{position:fixed;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;padding:24px 16px calc(24px + env(safe-area-inset-bottom));gap:14px;text-align:center}
+  .scr.on{display:flex}
+  #home{background:radial-gradient(120% 80% at 50% 0%,#2a0a3a 0%,#000 60%)}
+  .logo{width:96px;height:96px;border-radius:28px;background:var(--ig);display:flex;align-items:center;justify-content:center;font-size:54px;box-shadow:0 10px 40px #d6297666}
+  h1{font-size:34px;margin:6px 0 0;font-weight:800;letter-spacing:-.5px}
+  h1 span{background:var(--ig);-webkit-background-clip:text;background-clip:text;color:transparent}
+  p{margin:0;color:var(--mut);font-size:15px}
+  input{width:100%;max-width:340px;font-size:18px;padding:14px 16px;border-radius:12px;border:1px solid #363636;background:#121212;color:var(--fg);text-align:center;outline:none}
+  input:focus{border-color:#a8a8a8}
+  input.code{text-transform:uppercase;letter-spacing:8px;font-weight:800}
+  button{width:100%;max-width:340px;font-size:17px;font-weight:700;padding:15px;border-radius:12px;border:0;background:#0095f6;color:#fff}
+  button.grad{background:var(--ig);box-shadow:0 8px 30px #d6297655}
+  button.sec{background:#262626;color:var(--fg)}
+  button:active{transform:scale(.97)}
+  .row{display:flex;gap:10px;width:100%;max-width:340px}
+  .livepill{display:inline-flex;align-items:center;gap:6px;background:var(--live);color:#fff;font-weight:800;font-size:13px;padding:4px 8px;border-radius:6px;letter-spacing:.5px}
+  .bigcode{font-size:52px;font-weight:900;letter-spacing:10px;background:var(--ig);-webkit-background-clip:text;background-clip:text;color:transparent}
+  #players{display:flex;flex-wrap:wrap;justify-content:center;gap:16px;max-width:360px;margin-top:6px}
+  .av{display:flex;flex-direction:column;align-items:center;gap:6px;font-size:13px;width:72px}
+  .ring{width:68px;height:68px;border-radius:50%;padding:3px;background:var(--ig);animation:pop .4s}
+  .ring b{display:flex;width:100%;height:100%;border-radius:50%;background:#262626;border:3px solid #000;align-items:center;justify-content:center;font-size:26px;font-weight:800}
+  .av span{max-width:72px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  @keyframes pop{from{transform:scale(.3);opacity:0}to{transform:scale(1);opacity:1}}
+  #game{padding:0;justify-content:flex-start}
+  video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
+  .shade{position:absolute;inset:0;background:linear-gradient(#0009 0,#0000 22%,#0000 60%,#000b 100%);z-index:1;pointer-events:none}
+  .top{position:absolute;left:12px;right:12px;top:calc(12px + env(safe-area-inset-top));display:flex;align-items:center;gap:8px;z-index:2}
+  .me{display:flex;align-items:center;gap:8px;font-weight:700;font-size:14px}
+  .me .ring{width:34px;height:34px;padding:2px;animation:none}
+  .me .ring b{font-size:14px;border-width:2px}
+  .viewers{display:inline-flex;align-items:center;gap:5px;background:#0006;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);font-weight:700;font-size:13px;padding:4px 8px;border-radius:6px}
+  .sp{flex:1}
+  .hud{position:absolute;left:0;right:0;top:calc(64px + env(safe-area-inset-top));display:flex;flex-direction:column;align-items:center;gap:8px;z-index:2}
+  #clock{font-size:60px;font-weight:900;font-variant-numeric:tabular-nums;text-shadow:0 2px 12px #000a}
+  #status{font-size:15px;font-weight:700;background:#0006;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);padding:6px 12px;border-radius:20px}
+  .meter{width:55%;height:6px;border-radius:3px;background:#fff3;overflow:hidden}
+  .meter i{display:block;height:100%;width:0;background:var(--ig);transition:width .08s}
+  #feed{position:absolute;left:12px;right:80px;bottom:calc(20px + env(safe-area-inset-bottom));z-index:2;display:flex;flex-direction:column;gap:8px;align-items:flex-start;-webkit-mask-image:linear-gradient(transparent,#000 30%);mask-image:linear-gradient(transparent,#000 30%);max-height:40vh;overflow:hidden;justify-content:flex-end}
+  .cm{display:flex;gap:8px;align-items:center;font-size:14px;text-align:left;animation:up .3s}
+  .cm .ring{width:28px;height:28px;padding:2px;flex:none;animation:none}
+  .cm .ring b{font-size:12px;border-width:2px}
+  .cm em{font-style:normal;font-weight:700;margin-right:6px}
+  @keyframes up{from{transform:translateY(12px);opacity:0}to{transform:none;opacity:1}}
+  #hearts{position:absolute;right:14px;bottom:calc(20px + env(safe-area-inset-bottom));width:60px;height:60vh;z-index:2;pointer-events:none}
+  .ht{position:absolute;bottom:0;left:16px;font-size:30px;animation:fly 2.6s ease-out forwards}
+  @keyframes fly{0%{transform:translate(0,0) scale(.4);opacity:0}10%{opacity:1}100%{transform:translate(var(--dx),-55vh) scale(1.2);opacity:0}}
+  #prep{position:absolute;inset:0;display:none;align-items:center;justify-content:center;font-size:170px;font-weight:900;z-index:3;text-shadow:0 4px 30px #000}
+  #prep.go{background:var(--ig);-webkit-background-clip:text;background-clip:text;color:transparent;text-shadow:none}
+  #res{background:radial-gradient(120% 80% at 50% 30%,#3a0a1f 0%,#000 65%)}
+  #cd{font-size:210px;font-weight:900;background:var(--ig);-webkit-background-clip:text;background-clip:text;color:transparent}
+  #reveal{display:none;flex-direction:column;align-items:center;gap:12px}
+  .phring{padding:5px;border-radius:28px;background:var(--ig);transform:rotate(-3deg);animation:pop .5s;box-shadow:0 20px 60px #d6297666}
+  .phring img{display:block;width:74vw;max-width:340px;border-radius:24px;border:4px solid #000}
+  #loserName{font-size:40px;font-weight:900;text-transform:uppercase;letter-spacing:-.5px}
+  .tag{font-size:16px;font-weight:700;color:var(--mut)}
+  .err{color:#ed4956}
+  .shake{animation:sh .35s infinite}
+  @keyframes sh{0%,100%{transform:translate(0)}25%{transform:translate(-5px,2px) rotate(-1deg)}75%{transform:translate(5px,-2px) rotate(1deg)}}
+</style>
+</head>
+<body>
+
+<section class="scr on" id="home">
+  <div class="logo">😐</div>
+  <h1>НЕ <span>УЛЫБАЙСЯ</span></h1>
+  <p>Кто первый улыбнётся — проиграл</p>
+  <input id="name" placeholder="Твоё имя" maxlength="14" autocomplete="off">
+  <button class="grad" id="btnCreate">Создать комнату</button>
+  <div class="row"><input id="code" class="code" placeholder="КОД" maxlength="4" autocomplete="off"><button class="sec" id="btnJoin" style="max-width:130px">Войти</button></div>
+  <p id="homeErr" class="err"></p>
+</section>
+
+<section class="scr" id="lobby">
+  <span class="livepill">● LIVE скоро</span>
+  <p>Код комнаты</p>
+  <div class="bigcode" id="roomCode">----</div>
+  <p id="lobbyHint"></p>
+  <div id="players"></div>
+  <button class="grad" id="btnStart" style="display:none">Начать эфир</button>
+  <p id="lobbyErr" class="err"></p>
+</section>
+
+<section class="scr" id="game">
+  <video id="cam" playsinline muted autoplay></video>
+  <div class="shade"></div>
+  <div class="top">
+    <div class="me"><div class="ring"><b id="meAv">?</b></div><span id="meName"></span></div>
+    <span class="sp"></span>
+    <span class="livepill" id="livePill" style="visibility:hidden">LIVE</span>
+    <span class="viewers">👁 <span id="viewers">1</span></span>
+  </div>
+  <div class="hud">
+    <div id="clock">0:00.0</div>
+    <div id="status">Загружаю распознавание…</div>
+    <div class="meter"><i id="meter"></i></div>
+  </div>
+  <div id="feed"></div>
+  <div id="hearts"></div>
+  <div id="prep"></div>
+</section>
+
+<section class="scr" id="res">
+  <div id="cd">5</div>
+  <div id="reveal">
+    <div class="tag">😂 первым улыбнулся</div>
+    <div id="loserName"></div>
+    <div class="phring"><img id="loserImg" alt=""></div>
+    <div class="tag" id="loserTime"></div>
+    <button class="grad" id="btnAgain" style="display:none">Ещё раз</button>
+    <p id="againHint"></p>
+  </div>
+</section>
+
+<audio id="sDun" src="zvuki/dundun.mp3" preload="auto"></audio>
+<audio id="sRev" src="zvuki/reveal.mp3" preload="auto"></audio>
+
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script type="module">
+import {FaceLandmarker, FilesetResolver} from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
+
+const $ = id => document.getElementById(id);
+const PREFIX = 'ne-ulybaysya-v1-';
+const SMILE_MIN = 0.45;      // минимальный порог улыбки
+const SMILE_OVER = 0.25;     // насколько выше спокойного лица
+const SMILE_HOLD_MS = 250;   // улыбка держится столько, чтобы засчитать
+
+let isHost = false, peer = null, hostConn = null, myName = '';
+const players = new Map();   // хост: peerId -> {name, conn}
+let landmarker = null, stream = null;
+let phase = 'idle';          // idle | prep | run | done
+let t0 = 0, baseline = 0, calib = [], smileSince = 0, sentSmile = false;
+
+function ini(n){ return (n||'?').trim().charAt(0).toUpperCase() || '?'; }
+function esc(n){ return String(n).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function feed(name, text){
+  const f = $('feed'), d = document.createElement('div'); d.className = 'cm';
+  d.innerHTML = '<div class="ring"><b>' + esc(ini(name)) + '</b></div><div><em>' + esc(name) + '</em>' + esc(text) + '</div>';
+  f.appendChild(d); while (f.children.length > 6) f.firstChild.remove();
+}
+function heart(){
+  const h = document.createElement('div'); h.className = 'ht';
+  h.textContent = ['❤️','🔥','😐','🫣','💀'][Math.floor(Math.random()*5)];
+  h.style.setProperty('--dx', (Math.random()*60-40) + 'px');
+  $('hearts').appendChild(h); setTimeout(() => h.remove(), 2700);
+}
+setInterval(() => { if (phase === 'run' && Math.random() < .6) heart(); }, 450);
+function show(id){ document.querySelectorAll('.scr').forEach(s => s.classList.toggle('on', s.id === id)); }
+function fmt(ms){ const s = ms/1000; return Math.floor(s/60) + ':' + (s%60).toFixed(1).padStart(4,'0'); }
+function code4(){ const a='ABCDEFGHJKLMNPRSTUVWXYZ'; return Array.from({length:4},()=>a[Math.floor(Math.random()*a.length)]).join(''); }
+
+// iOS открывает звук и камеру только после нажатия — разблокируем звуки на первом тапе
+function unlockAudio(){
+  for (const a of [$('sDun'), $('sRev')]) { a.muted = true; a.play().then(()=>{a.pause(); a.currentTime=0; a.muted=false;}).catch(()=>{}); }
+}
+
+async function initCam(){
+  stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'user', width:{ideal:640}, height:{ideal:480}}, audio:false});
+  $('cam').srcObject = stream;
+  await $('cam').play();
+}
+
+async function initModel(){
+  const fs = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
+  const opts = d => ({baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task", delegate:d},
+                      runningMode:'VIDEO', numFaces:1, outputFaceBlendshapes:true});
+  try { landmarker = await FaceLandmarker.createFromOptions(fs, opts('GPU')); }
+  catch(e){ landmarker = await FaceLandmarker.createFromOptions(fs, opts('CPU')); }
+}
+
+async function prepareDevice(){
+  unlockAudio();
+  show('game');
+  $('meAv').textContent = ini(myName); $('meName').textContent = myName;
+  $('status').textContent = 'Включаю камеру…';
+  await initCam();
+  $('status').textContent = 'Загружаю распознавание…';
+  await initModel();
+  $('status').textContent = 'Готов. Ждём старт';
+  requestAnimationFrame(loop);
+}
+
+function smileScore(){
+  const v = $('cam');
+  if (!landmarker || v.readyState < 2) return null;
+  const r = landmarker.detectForVideo(v, performance.now());
+  const bs = r.faceBlendshapes && r.faceBlendshapes[0];
+  if (!bs) return null;
+  let l = 0, rr = 0;
+  for (const c of bs.categories){ if (c.categoryName === 'mouthSmileLeft') l = c.score; if (c.categoryName === 'mouthSmileRight') rr = c.score; }
+  return (l + rr) / 2;
+}
+
+function snapshot(){
+  const v = $('cam'), w = 360, h = Math.round(w * v.videoHeight / v.videoWidth);
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const g = c.getContext('2d'); g.translate(w,0); g.scale(-1,1); g.drawImage(v,0,0,w,h);
+  return c.toDataURL('image/jpeg', 0.75);
+}
+
+function loop(){
+  const s = smileScore();
+  if (s !== null) $('meter').style.width = Math.min(100, s*100) + '%';
+  if (phase === 'prep' && s !== null) calib.push(s);
+  if (phase === 'run'){
+    $('clock').textContent = fmt(performance.now() - t0);
+    if (s === null) $('status').textContent = 'Лицо не видно!';
+    else {
+      $('status').textContent = 'Держись…';
+      const thr = Math.max(SMILE_MIN, baseline + SMILE_OVER);
+      if (s > thr){
+        if (!smileSince) smileSince = performance.now();
+        if (!sentSmile && performance.now() - smileSince > SMILE_HOLD_MS){ sentSmile = true; reportSmile(snapshot()); }
+      } else smileSince = 0;
+    }
+  }
+  requestAnimationFrame(loop);
+}
+
+// ---------- сеть ----------
+function send(conn, msg){ try { conn.open && conn.send(msg); } catch(e){} }
+function broadcast(msg){ for (const p of players.values()) if (p.conn) send(p.conn, msg); handle(msg); }
+function lobbyList(){ return [...players.values()].map(p => p.name); }
+
+function reportSmile(photo){
+  if (isHost) hostGotSmile(myName, photo);
+  else send(hostConn, {type:'smile', photo});
+}
+
+let hostStart = 0, loserTaken = false;
+function hostGotSmile(name, photo){
+  if (loserTaken || phase !== 'run') return;
+  loserTaken = true;
+  broadcast({type:'loser', name, photo, ms: performance.now() - hostStart});
+}
+
+function handle(msg){
+  if (msg.type === 'lobby'){
+    $('players').innerHTML = msg.players.map(n => '<div class="av"><div class="ring"><b>' + esc(ini(n)) + '</b></div><span>' + esc(n) + '</span></div>').join('');
+    $('viewers').textContent = msg.players.length;
+  }
+  if (msg.type === 'start') startRound();
+  if (msg.type === 'feed') feed(msg.name, msg.text);
+  if (msg.type === 'loser') showLoser(msg);
+  if (msg.type === 'reset'){ phase = 'idle'; show('game'); $('clock').textContent = '0:00.0'; $('status').textContent = 'Готов. Ждём старт'; if (isHost) showHostLobby(); else show('lobby'); }
+}
+
+function startRound(){
+  show('game');
+  phase = 'prep'; calib = []; sentSmile = false; smileSince = 0;
+  $('clock').textContent = '0:00.0';
+  const p = $('prep'); p.style.display = 'flex';
+  $('feed').innerHTML = ''; $('livePill').style.visibility = 'hidden'; p.classList.remove('go');
+  let n = 4; p.textContent = 3; n = 3;
+  const iv = setInterval(() => {
+    n--;
+    if (n > 0){ p.textContent = n; return; }
+    if (n === 0){ p.textContent = 'GO'; p.classList.add('go'); return; }
+    clearInterval(iv); p.style.display = 'none';
+    const sorted = calib.slice().sort((a,b)=>a-b);
+    baseline = sorted.length ? sorted[Math.floor(sorted.length/2)] : 0;
+    t0 = performance.now(); if (isHost){ hostStart = t0; loserTaken = false; }
+    phase = 'run'; $('livePill').style.visibility = 'visible';
+    feed('эфир', ' начался. Кто первый улыбнётся — проиграл 😐');
+  }, 1000);
+}
+
+function showLoser(m){
+  phase = 'done';
+  show('res');
+  $('reveal').style.display = 'none'; $('cd').style.display = 'block'; $('cd').classList.add('shake');
+  const dun = $('sDun'); dun.currentTime = 0; dun.play().catch(()=>{});
+  let n = 5; $('cd').textContent = n;
+  const iv = setInterval(() => {
+    n--;
+    if (n > 0){ $('cd').textContent = n; return; }
+    clearInterval(iv);
+    $('cd').style.display = 'none'; $('cd').classList.remove('shake');
+    $('loserName').textContent = m.name;
+    $('loserImg').src = m.photo;
+    $('loserTime').textContent = 'продержался ' + fmt(m.ms);
+    $('reveal').style.display = 'flex';
+    $('btnAgain').style.display = isHost ? 'block' : 'none';
+    $('againHint').textContent = isHost ? '' : 'Ждём, пока создатель комнаты нажмёт «Ещё раз»';
+    const rv = $('sRev'); rv.currentTime = 0; rv.play().catch(()=>{});
+  }, 1000);
+}
+
+function showHostLobby(){
+  show('lobby');
+  $('btnStart').style.display = 'block';
+  $('lobbyHint').textContent = 'Друзья вводят этот код у себя';
+  broadcast({type:'lobby', players: lobbyList()});
+}
+
+async function createRoom(){
+  myName = ($('name').value.trim() || 'Игрок');
+  isHost = true;
+  const code = code4();
+  await prepareDevice();
+  peer = new Peer(PREFIX + code);
+  peer.on('open', () => {
+    $('roomCode').textContent = code;
+    players.set('host', {name: myName, conn: null});
+    showHostLobby();
+  });
+  peer.on('connection', conn => {
+    conn.on('data', msg => {
+      if (msg.type === 'hello'){ players.set(conn.peer, {name: msg.name, conn}); broadcast({type:'lobby', players: lobbyList()}); broadcast({type:'feed', name: msg.name, text:'присоединился(-ась) к эфиру'}); }
+      if (msg.type === 'smile'){ const p = players.get(conn.peer); hostGotSmile(p ? p.name : '?', msg.photo); }
+    });
+    conn.on('close', () => { players.delete(conn.peer); broadcast({type:'lobby', players: lobbyList()}); });
+  });
+  peer.on('error', e => {
+    if (e.type === 'unavailable-id'){ peer.destroy(); isHost = false; createRoom(); return; }
+    $('lobbyErr').textContent = 'Ошибка связи: ' + e.type;
+  });
+}
+
+async function joinRoom(){
+  myName = ($('name').value.trim() || 'Игрок');
+  const code = $('code').value.trim().toUpperCase();
+  if (code.length !== 4){ $('homeErr').textContent = 'Введи код из 4 букв'; return; }
+  await prepareDevice();
+  peer = new Peer();
+  peer.on('open', () => {
+    hostConn = peer.connect(PREFIX + code, {reliable: true});
+    hostConn.on('open', () => {
+      send(hostConn, {type:'hello', name: myName});
+      $('roomCode').textContent = code;
+      $('lobbyHint').textContent = 'Ждём, пока создатель нажмёт СТАРТ';
+      show('lobby');
+    });
+    hostConn.on('data', handle);
+    hostConn.on('close', () => { show('lobby'); $('lobbyErr').textContent = 'Создатель комнаты отключился'; });
+  });
+  peer.on('error', e => {
+    show('home');
+    $('homeErr').textContent = e.type === 'peer-unavailable' ? 'Комната не найдена' : 'Ошибка связи: ' + e.type;
+  });
+}
+
+function guard(fn){ return async () => {
+  $('homeErr').textContent = '';
+  try { await fn(); }
+  catch(e){ show('home'); $('homeErr').textContent = e && e.name === 'NotAllowedError' ? 'Разреши доступ к камере в настройках браузера' : 'Не получилось: ' + (e.message || e); }
+}; }
+
+$('btnCreate').onclick = guard(createRoom);
+$('btnJoin').onclick = guard(joinRoom);
+$('btnStart').onclick = () => { if (players.size) broadcast({type:'start'}); };
+$('btnAgain').onclick = () => broadcast({type:'reset'});
+</script>
+</body>
+</html>
