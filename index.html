@@ -67,13 +67,16 @@
   #grid.n4,#grid.n5,#grid.n6{grid-template-columns:1fr 1fr}
   .tile{position:relative;overflow:hidden;background:#111}
   .tile video{width:100%;height:100%;object-fit:cover}
+  .ph .ring{width:76px;height:76px}
   .ph{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--mut);font-size:13px}
   .tile.live .ph{display:none}
   .tname{position:absolute;left:10px;bottom:8px;z-index:1;font-weight:700;font-size:13px;background:#0007;padding:3px 8px;border-radius:10px}
   #prepAv{position:absolute;top:22%;left:0;right:0;display:flex;justify-content:center;gap:14px;z-index:4;pointer-events:none}
-  #prepAv .ring{width:76px;height:76px;opacity:0}
-  #prepAv.in .ring{animation:flyin .6s cubic-bezier(.2,1.6,.4,1) forwards, bob 1s .6s ease-in-out infinite}
-  #prepAv.out .ring{animation:flyout .7s cubic-bezier(.6,-.4,.8,.6) forwards}
+  #prepAv .pa{display:flex;flex-direction:column;align-items:center;gap:6px;opacity:0}
+  #prepAv .ring{width:76px;height:76px;animation:none}
+  #prepAv .pa span{font-weight:700;font-size:13px;max-width:84px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-shadow:0 1px 4px #000}
+  #prepAv.in .pa{animation:flyin .6s cubic-bezier(.2,1.6,.4,1) forwards, bob 1s .6s ease-in-out infinite}
+  #prepAv.out .pa{animation:flyout .7s cubic-bezier(.6,-.4,.8,.6) forwards}
   @keyframes flyin{from{transform:translateY(60vh) scale(.2) rotate(-30deg);opacity:0}to{transform:none;opacity:1}}
   @keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
   @keyframes flyout{from{transform:none;opacity:1}to{transform:translateY(-50vh) scale(2.2) rotate(25deg);opacity:0}}
@@ -145,6 +148,7 @@
     <div class="tag" id="loserWhy"></div>
     <div id="loserName"></div>
     <div class="phring"><img id="loserImg" alt=""></div>
+    <div class="phring" id="ph2" style="display:none;margin-top:-40px;transform:rotate(4deg)"><img id="loserImg2" alt="" style="width:44vw;max-width:200px"></div>
     <div class="tag" id="loserTime"></div>
     <button class="sec" id="btnShare" style="display:none">Поделиться фоткой</button>
     <button class="grad" id="btnAgain" style="display:none">Ещё раз</button>
@@ -164,7 +168,8 @@ const $ = id => document.getElementById(id);
 const PREFIX = 'ne-ulybaysya-v2-';   // id для видео (WebRTC)
 const SMILE_MIN = 0.45;      // минимальный порог улыбки
 const SMILE_OVER = 0.25;     // насколько выше спокойного лица
-const SMILE_HOLD_MS = 200;   // улыбка держится 0,2 с — проиграл
+const SMILE_FRAMES = 2, SMILE_HOLD_MS = 100;   // проиграл: 2 кадра подряд с улыбкой или улыбка ≥0,1 с
+const DET_W = 256, DET_MS = 66;   // детектор: кадр 256 px, не чаще 15 раз в секунду — телефон не греется
 const NOFACE_WARN_MS = 1000, NOFACE_LOSE_MS = 2500; // спрятал лицо = проиграл
 const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
@@ -174,7 +179,7 @@ let landmarker = null, stream = null;
 let phase = 'idle';          // idle | prep | run | done
 let t0 = 0, baseline = 0, smileSince = 0, sentSmile = false;
 let myAvatar = '', myReady = false, roster = [], calls = new Map();
-let lastFaceShot = '', lastShotAt = 0, ema = null, noFaceSince = 0, lastVideoTime = -1, lastScore = null, modelReady = null, wakeLock = null;
+let lastFaceShot = '', lastShotAt = 0, smileFrames = 0, lastDet = 0, detFps = 0, noFaceSince = 0, lastVideoTime = -1, lastScore = null, modelReady = null, wakeLock = null;
 
 function ini(n){ return (n||'?').trim().charAt(0).toUpperCase() || '?'; }
 function esc(n){ return String(n).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
@@ -236,17 +241,36 @@ function play(k){
 }
 
 async function keepAwake(){ try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch(e){} }
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && stream) keepAwake(); });
+// свернул или ушёл в другое приложение посреди раунда = как пропало лицо; вернулся — тихо в ту же комнату
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden'){
+    if (phase === 'run' && !sentSmile){ sentSmile = true; reportSmile(lastFaceShot || snapshot(), 'ушёл(-ла) из эфира'); }
+    return;
+  }
+  if (stream) keepAwake();
+  if (stream) initCam().catch(() => {});
+  for (const v of document.querySelectorAll('video')) v.play().catch(() => {});
+  if (!room) return;
+  for (const c of clients) if (!c.connected) try { c.reconnect(); } catch(e){}
+  if (isHost) for (const p of players.values()) p.seen = Math.max(p.seen, Date.now());
+  else if (inRoom){ lastHello = 0; hello(); }
+  if (peer && peer.disconnected && !peer.destroyed) peer.reconnect();
+  syncCalls();
+});
 
 async function initCam(){
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('Камера недоступна. Открой ссылку в Safari или Chrome, а не внутри Телеграма или Инстаграма');
   if (stream && stream.active && stream.getVideoTracks().every(t => t.readyState === 'live')){ $('cam').play().catch(()=>{}); return; }
   // некоторые встроенные браузеры молча не показывают запрос камеры — не висим, а говорим, что делать
   stream = await Promise.race([
-    navigator.mediaDevices.getUserMedia({video:{facingMode:'user', width:{ideal:640}, height:{ideal:480}}, audio:false}),
+    navigator.mediaDevices.getUserMedia({video:{facingMode:'user', width:{ideal:480}, height:{ideal:360}, frameRate:{ideal:15, max:20}}, audio:false}),
     new Promise((_, no) => setTimeout(() => no(new Error('Камера не включилась. Нажми «Разрешить», а если запроса нет — открой ссылку в Safari или Chrome')), 15000))
   ]);
   $('cam').srcObject = stream;
+  if ($('pv').srcObject) $('pv').srcObject = stream;
+  // камеру включили заново (после сворачивания) — подменяем картинку во всех звонках
+  const tr = stream.getVideoTracks()[0];
+  for (const c of [...calls.values(), ...relaysOut()]) try { for (const sd of c.peerConnection.getSenders()) if (sd.track && sd.track.kind === 'video' && sd.track.readyState !== 'live') sd.replaceTrack(tr); } catch(e){}
   await $('cam').play();
 }
 
@@ -270,25 +294,24 @@ async function prepareDevice(){
   keepAwake();
   $('status').textContent = 'Загружаю распознавание…';
   await initModel();
-  try { if ($('cam').readyState >= 2) landmarker.detectForVideo($('cam'), performance.now()); } catch(e){}   // прогрев: первый кадр самый медленный
+  try { detectRaw($('cam')); } catch(e){}   // прогрев: первый кадр самый медленный
   $('status').textContent = 'Готов. Ждём старт';
   $('pv').srcObject = stream; $('pv').play().catch(() => {});
   if (!loopOn){ loopOn = true; requestAnimationFrame(loop); }
 }
 
-function smileScore(){
-  const v = $('cam');
-  if (!landmarker || v.readyState < 2) return null;
-  if (v.currentTime === lastVideoTime) return lastScore;
-  lastVideoTime = v.currentTime;
-  const r = landmarker.detectForVideo(v, performance.now());
-  const bs = r.faceBlendshapes && r.faceBlendshapes[0];
-  if (!bs){ ema = null; return (lastScore = null); }
+const detCv = document.createElement('canvas'), detG = detCv.getContext('2d');
+// оценка улыбки 0..1 по уменьшенному кадру; null — лица нет; undefined — кадра нет
+function detectRaw(v){
+  if (!landmarker || v.readyState < 2 || !v.videoWidth) return undefined;
+  const h = Math.round(DET_W * v.videoHeight / v.videoWidth);
+  if (detCv.width !== DET_W || detCv.height !== h){ detCv.width = DET_W; detCv.height = h; }
+  detG.drawImage(v, 0, 0, DET_W, h);
+  const r = landmarker.detectForVideo(detCv, performance.now()), bs = r.faceBlendshapes && r.faceBlendshapes[0];
+  if (!bs) return null;
   let l = 0, rr = 0;
   for (const c of bs.categories){ if (c.categoryName === 'mouthSmileLeft') l = c.score; if (c.categoryName === 'mouthSmileRight') rr = c.score; }
-  const raw = Math.max(l, rr);
-  ema = ema === null ? raw : ema * 0.5 + raw * 0.5;
-  return (lastScore = ema);
+  return Math.max(l, rr);
 }
 
 function snapshot(){
@@ -301,26 +324,32 @@ function snapshot(){
 function loop(){
   requestAnimationFrame(loop);
   if (phase !== 'prep' && phase !== 'run') return;
-  const s = smileScore(), now = performance.now();
+  const now = performance.now(), v = $('cam');
+  if (phase === 'run') $('clock').textContent = fmt(now - t0);
+  if (now - lastDet < DET_MS || v.currentTime === lastVideoTime) return;
+  const s = detectRaw(v);
+  if (s === undefined) return;
+  detFps = detFps ? detFps * 0.9 + 100 / (now - lastDet) : 1000 / DET_MS;   // реальная частота детектора (для отладки)
+  lastDet = now; lastVideoTime = v.currentTime;
   if (s !== null) $('meter').style.width = Math.min(100, s*100) + '%';
-  if (phase === 'run'){
-    $('clock').textContent = fmt(now - t0);
-    if (s === null){
-      if (!noFaceSince) noFaceSince = now;
-      const gone = now - noFaceSince;
-      $('status').textContent = gone > NOFACE_WARN_MS ? '⚠️ Покажи лицо! ' + Math.max(0, (NOFACE_LOSE_MS - gone)/1000).toFixed(1) : 'Лицо не видно';
-      if (!sentSmile && gone > NOFACE_LOSE_MS){ sentSmile = true; reportSmile(lastFaceShot || snapshot(), 'спрятал(а) лицо'); }
-      smileSince = 0;
-    } else {
-      noFaceSince = 0;
-      if (now - lastShotAt > 500){ lastShotAt = now; lastFaceShot = snapshot(); }
-      $('status').textContent = 'Держись…';
-      const thr = Math.max(SMILE_MIN, baseline + SMILE_OVER);
-      if (s > thr){
-        if (!smileSince) smileSince = performance.now();
-        if (!sentSmile && now - smileSince > SMILE_HOLD_MS){ sentSmile = true; reportSmile(snapshot(), 'первым(-ой) улыбнулся(-ась)'); }
-      } else smileSince = 0;
-    }
+  if (phase !== 'run') return;
+  if (s === null){
+    if (!noFaceSince) noFaceSince = now;
+    const gone = now - noFaceSince;
+    $('status').textContent = gone > NOFACE_WARN_MS ? '⚠️ Покажи лицо! ' + Math.max(0, (NOFACE_LOSE_MS - gone)/1000).toFixed(1) : 'Лицо не видно';
+    if (!sentSmile && gone > NOFACE_LOSE_MS){ sentSmile = true; reportSmile(lastFaceShot || snapshot(), 'спрятал(а) лицо'); }
+    smileFrames = 0;
+    return;
+  }
+  noFaceSince = 0;
+  $('status').textContent = 'Держись…';
+  const thr = Math.max(SMILE_MIN, baseline + SMILE_OVER);
+  if (s > thr){
+    if (!smileFrames++) smileSince = now;
+    if (!sentSmile && (smileFrames >= SMILE_FRAMES || now - smileSince >= SMILE_HOLD_MS)){ sentSmile = true; reportSmile(snapshot(), 'первым(-ой) улыбнулся(-ась)'); }
+  } else {
+    smileFrames = 0;
+    if (now - lastShotAt > 500){ lastShotAt = now; lastFaceShot = snapshot(); }
   }
 }
 
@@ -330,11 +359,11 @@ function loop(){
 const BROKERS = ['wss://broker.emqx.io:8084/mqtt', 'wss://broker.hivemq.com:8884/mqtt'];
 const rid = () => Math.random().toString(36).slice(2, 12);
 const myId = rid();
-let room = '', clients = [], onNet = null, inRoom = false, lastHost = 0, lastHello = 0;
+let room = '', clients = [], onNet = null, inRoom = false, lastHost = 0, lastHello = 0, ep = 0;   // ep — номер ведущего: растёт при смене
 const seen = new Set(), seenQ = [];
 function topic(k){ return 'ne-ulybaysya/v2/' + room + '/' + k; }   // h — создателю, all — всем
 function netClose(){ for (const c of clients) try { c.end(true); } catch(e){} clients = []; }
-function netOpen(code, sub, willKey, will){
+function netOpen(code, willKey, will){
   netClose(); room = code;
   return new Promise((resolve, reject) => {
     let up = false;
@@ -342,12 +371,12 @@ function netOpen(code, sub, willKey, will){
     for (const url of BROKERS){
       const c = mqtt.connect(url, {clientId: 'nu_' + myId + '_' + rid().slice(0, 4), keepalive: 20, reconnectPeriod: 2000, connectTimeout: 8000,
         will: {topic: topic(willKey), payload: JSON.stringify(will), qos: 1}});
-      c.on('connect', () => c.subscribe(topic(sub), {qos: 1}, err => { if (!err && !up){ up = true; clearTimeout(to); resolve(); } }));
+      c.on('connect', () => c.subscribe([topic('h'), topic('all')], {qos: 1}, err => { if (!err && !up){ up = true; clearTimeout(to); resolve(); } }));
       c.on('message', (t, buf) => {
         let m; try { m = JSON.parse(buf.toString()); } catch(e){ return; }
         if (!m || !m.mid || seen.has(m.mid)) return;
         seen.add(m.mid); seenQ.push(m.mid); if (seenQ.length > 1000) seen.delete(seenQ.shift());
-        if (onNet) onNet(m);
+        route(t.endsWith('/h') ? 'h' : 'all', m);
       });
       c.on('error', () => {});
       clients.push(c);
@@ -355,21 +384,52 @@ function netOpen(code, sub, willKey, will){
   });
 }
 function pub(k, msg){
-  msg.mid = rid(); msg.from = myId;
+  msg.mid = rid(); msg.from = myId; if (isHost) msg.ep = ep;
+  seen.add(msg.mid);   // своё эхо не обрабатываем
   const data = JSON.stringify(msg);
   for (const c of clients) try { c.publish(topic(k), data, {qos: 1}); } catch(e){}
 }
 function toHost(msg){ pub('h', msg); }
 function broadcast(msg){ pub('all', msg); handle(msg); }
-function sendLobby(){ broadcast({type:'lobby', players: lobbyList()}); }
-function lobbyList(){ return [...players.entries()].map(([id, p]) => ({id, name: p.name, avatar: p.avatar || '', ready: !!p.ready})); }
+function sendLobby(){ broadcast({type:'lobby', players: lobbyList(), ph: phase}); }
+function lobbyList(){ return [...players.entries()].map(([id, p]) => ({id, name: p.name, avatar: p.avatar || '', ready: !!p.ready, loss: p.loss || 0})); }
+function route(k, m){
+  if (!m.from || m.from === myId) return;
+  if (k === 'h'){ if (isHost) hostNet(m); return; }
+  if (isHost){ if ((m.ep || 0) > ep) demote(m); return; }   // в комнате уже есть ведущий новее — уступаем
+  if ((m.ep || 0) < ep) return;                              // старый ведущий вернулся — не слушаем
+  ep = m.ep || 0;
+  guestNet(m);
+}
+// ведущий пропал: его место занимает следующий игрок по списку, комната живёт дальше
+function promote(){
+  const old = hostId;
+  isHost = true; ep++; hostId = myId; inRoom = true;
+  players.clear();
+  for (const r of roster) if (r.id !== old) players.set(r.id, r.id === myId ? {name: myName, avatar: myAvatar, ready: myReady, loss: r.loss || 0, seen: Infinity} : {name: r.name, avatar: r.avatar, ready: r.ready, loss: r.loss || 0, seen: Date.now()});
+  if (!players.has(myId)) players.set(myId, {name: myName, avatar: myAvatar, ready: myReady, loss: 0, seen: Infinity});
+  if (phase === 'run'){ hostStart = t0; loserTaken = false; cands = []; }
+  $('btnStart').style.display = 'block'; $('btnInvite').style.display = 'block';
+  $('lobbyHint').textContent = 'Создатель вышел — теперь ведёшь ты'; $('lobbyErr').textContent = '';
+  if (phase === 'done'){ $('btnAgain').style.display = 'block'; $('againHint').textContent = ''; }
+  sendLobby();
+  broadcast({type:'feed', name: myName, text: 'теперь ведёт комнату'});
+}
+function demote(m){
+  isHost = false; ep = m.ep; hostId = m.from; lastHost = Date.now();
+  $('btnStart').style.display = 'none'; $('btnAgain').style.display = 'none';
+  $('lobbyHint').textContent = 'Ждём, пока ведущий нажмёт СТАРТ';
+  lastHello = 0; hello();
+  guestNet(m);
+}
 
 // создатель: принимает сообщения гостей
 function hostNet(m){
-  const id = m.from; if (!id || id === myId) return;
+  const id = m.from;
   const p = players.get(id);
   if (m.type === 'hello'){
-    players.set(id, {name: String(m.name || '?').slice(0, 14), avatar: p ? p.avatar : '', ready: p ? p.ready : false, seen: Date.now()});
+    if (p && phase === 'done' && lastLoser) pub('all', {...lastLoser, type:'loser', to: id});
+    players.set(id, {name: String(m.name || '?').slice(0, 14), avatar: p ? p.avatar : '', ready: p ? p.ready : false, loss: p ? p.loss : 0, seen: Date.now()});
     sendLobby();
     if (!p) broadcast({type:'feed', name: String(m.name || '?').slice(0, 14), text:'присоединился(-ась) к эфиру'});
     return;
@@ -378,7 +438,7 @@ function hostNet(m){
   p.seen = Date.now();
   if (m.type === 'ready'){ p.avatar = okAvatar(m.avatar); p.ready = true; sendLobby(); }
   if (m.type === 'react') broadcast({type:'react', e: String(m.e).slice(0, 4), by: id});
-  if (m.type === 'smile') hostGotSmile(p.name, m.photo, m.ms, m.why);
+  if (m.type === 'smile') hostGotSmile(id, p.name, m.photo, m.ms, m.why);
   if (m.type === 'relay') hostRelay(id, String(m.of));
   if (m.type === 'bye'){ players.delete(id); sendLobby(); }
 }
@@ -390,8 +450,10 @@ function hello(){
   if (myReady) toHost({type:'ready', avatar: myAvatar});
 }
 function guestNet(m){
-  lastHost = Date.now(); hostId = m.from;
-  if (m.type === 'gone'){ $('lobbyErr').textContent = 'Создатель комнаты вышел из игры'; return; }
+  if (m.to && m.to !== myId) return;
+  lastHost = Date.now();
+  if (hostId !== m.from){ hostId = m.from; if (inRoom){ lastHello = 0; hello(); } }   // новый ведущий — напоминаем о себе
+  if (m.type === 'gone'){ lastHost = Date.now() - 9000; $('lobbyErr').textContent = 'Создатель вышел — передаю комнату следующему…'; return; }
   if (m.type === 'lobby'){
     const me = m.players.some(p => p.id === myId);
     if (!me){ hello(); if (!inRoom) return; }
@@ -410,9 +472,13 @@ setInterval(() => {
     if (ch) sendLobby();
   } else if (inRoom){
     toHost({type:'ping'});
-    const lost = Date.now() - lastHost > 12000, e = $('lobbyErr');
-    if (lost) e.textContent = 'Нет связи с создателем комнаты… переподключаюсь';
-    else if (e.textContent.startsWith('Нет связи')) e.textContent = '';
+    const gone = Date.now() - lastHost, e = $('lobbyErr');
+    if (gone > 9000){
+      // по очереди: первый в списке после ведущего, если и он молчит 6 с — следующий
+      const next = roster.filter(r => r.id !== hostId), k = Math.floor((gone - 9000) / 6000);
+      if (next.length && next[k % next.length].id === myId){ promote(); return; }
+      e.textContent = 'Нет связи с ведущим… переподключаюсь';
+    } else if (e.textContent.startsWith('Нет связи')) e.textContent = '';
   }
 }, 3000);
 window.addEventListener('pagehide', () => { if (room) pub(isHost ? 'all' : 'h', {type: isHost ? 'gone' : 'bye'}); });
@@ -422,6 +488,7 @@ function okAvatar(a){ return typeof a === 'string' && a.startsWith('data:image/j
 // ---------- видео всех игроков (как FaceTime) ----------
 // Сначала каждый звонит каждому напрямую. Если гость↔гость не соединились за 5 с (сотовый NAT),
 // гость просит создателя переслать ему видео этого игрока: с создателем связь есть у всех.
+window.__nu = {get fps(){ return detFps; }};   // для тестов
 const NOMESH = new URLSearchParams(location.search).has('nomesh');   // для теста запасного пути
 const remote = new Map();    // id -> MediaStream, пришедший напрямую
 const relays = new Map();    // гость: id -> звонок-пересылка; создатель: 'гость|id' -> звонок
@@ -437,7 +504,7 @@ function ensureTile(id){
     $('grid').appendChild(t);
   }
   const p = roster.find(r => r.id === id);
-  if (p){ t.querySelector('.tname').textContent = p.name; t.querySelector('.ph b').innerHTML = avHtml(p); }
+  if (p){ t.querySelector('.tname').textContent = p.name + (p.loss ? ' · 😂' + p.loss : ''); t.querySelector('.ph b').innerHTML = avHtml(p); }
   const w = since.get(id);
   t.querySelector('.ph small').textContent = w && Date.now() - w > 8000 ? 'нет связи' : 'подключаю видео…';
   return t;
@@ -454,8 +521,20 @@ function clearTile(id, st){
   if (remote.has(id)) setTileStream(id, remote.get(id));
   else if (relays.has(id) && relays.get(id).st) setTileStream(id, relays.get(id).st);
 }
+// видео собеседникам: до 300 кбит/с и 15 кадров — телефон меньше греется
+function capSenders(c){
+  try { for (const sd of c.peerConnection.getSenders()) if (sd.track && sd.track.kind === 'video'){
+    const p = sd.getParameters(); if (!p.encodings || !p.encodings.length) p.encodings = [{}];
+    const many = roster.length > 3;
+    p.encodings[0].maxBitrate = many ? 150000 : 300000; p.encodings[0].maxFramerate = 15; p.encodings[0].scaleResolutionDownBy = many ? 1.5 : 1;
+    sd.setParameters(p).catch(() => {});
+  } } catch(e){}
+}
+function capLater(c){ for (const ms of [1500, 5000]) setTimeout(() => capSenders(c), ms); }
+function relaysOut(){ return isHost ? [...relays.values()] : []; }
 function wireCall(c, id){
   if (!c) return;
+  capLater(c);
   calls.set(id, c);
   // нет картинки за 6 с — бросаем звонок, следующий пульс позвонит заново
   const to = setTimeout(() => { if (calls.get(id) === c){ calls.delete(id); try { c.close(); } catch(e){} } }, 6000);
@@ -487,7 +566,7 @@ function hostRelay(g, of){
   if (!peer || !peer.open || !st || relays.has(k) || !players.has(g)) return;
   const c = peer.call(PREFIX + g, st, {metadata: {of}});
   if (!c) return;
-  relays.set(k, c);
+  relays.set(k, c); capLater(c);
   const end = () => { if (relays.get(k) === c) relays.delete(k); };
   c.on('close', end); c.on('error', end);
   setTimeout(() => { if (relays.get(k) === c && !c.open){ relays.delete(k); try { c.close(); } catch(e){} } }, 8000);
@@ -529,35 +608,47 @@ function syncCalls(){
 
 function reportSmile(photo, why){
   const ms = performance.now() - t0;
-  if (isHost) hostGotSmile(myName, photo, ms, why);
+  if (isHost) hostGotSmile(myId, myName, photo, ms, why);
   else toHost({type:'smile', photo, ms, why});
 }
 
 let hostStart = 0, loserTaken = false, cands = [];
-function hostGotSmile(name, photo, ms, why){
+function hostGotSmile(id, name, photo, ms, why){
   if (loserTaken || phase !== 'run') return;
   if (typeof photo !== 'string' || !photo.startsWith('data:image/jpeg')) photo = '';
   if (!(ms > 0)) ms = performance.now() - hostStart;
-  cands.push({name, photo, ms, why: why || ''});
+  if (cands.some(c => c.id === id)) return;
+  cands.push({id, name, photo, ms, why: why || ''});
   if (cands.length > 1) return;
-  // ждём 400 мс: вдруг чья-то улыбка случилась раньше, но дольше ехала по сети
+  // ждём 600 мс: вдруг чья-то улыбка случилась раньше (по часам его телефона), но дольше ехала по сети
   setTimeout(() => {
     if (loserTaken) return;
     loserTaken = true;
-    const m = cands.reduce((a, b) => b.ms < a.ms ? b : a);
-    broadcast({type:'loser', ...m});
-  }, 400);
+    const all = cands.slice().sort((a, b) => a.ms - b.ms), lose = all.filter(c => c.ms - all[0].ms < 80);   // разница <80 мс — ничья, проиграли оба
+    for (const c of lose){ const p = players.get(c.id); if (p) p.loss = (p.loss || 0) + 1; }
+    broadcast({type:'loser', name: lose.map(c => c.name).join(' и '), photo: lose[0].photo, photo2: lose[1] ? lose[1].photo : '', ms: lose[0].ms, why: lose[0].why, tie: lose.length > 1});
+    sendLobby();
+  }, 600);
 }
 
+// зашёл посреди раунда — смотрит как зритель до следующего
+let hostPh = '';
+function spectate(){
+  if (hostPh !== 'run' || phase !== 'idle') return false;
+  show('game'); $('clock').textContent = ''; $('status').textContent = '👀 Раунд уже идёт — ты зритель. Играешь со следующего';
+  return true;
+}
 function handle(msg){
   if (msg.type === 'lobby'){
     roster = msg.players;
-    $('players').innerHTML = roster.map(p => '<div class="av' + (p.ready ? ' ok' : '') + '"><div class="ring"><b>' + avHtml(p) + '</b></div><span>' + esc(p.name) + '</span><small>' + (p.ready ? 'готов' : 'фоткается…') + '</small></div>').join('');
+    $('players').innerHTML = roster.map(p => '<div class="av' + (p.ready ? ' ok' : '') + '"><div class="ring"><b>' + avHtml(p) + '</b></div><span>' + esc(p.name) + '</span><small>' + (p.ready ? 'готов' : 'фоткается…') + (p.loss ? ' · 😂' + p.loss : '') + '</small></div>').join('');
     $('viewers').textContent = roster.length;
     const ready = roster.filter(p => p.ready).length, all = ready === roster.length;
     $('btnStart').disabled = !all;
     $('btnStart').textContent = all ? 'Начать эфир' : 'Ждём, пока все сфоткаются (' + ready + '/' + roster.length + ')';
     syncCalls();
+    hostPh = msg.ph;
+    if (!isHost && $('lobby').classList.contains('on')) spectate();
   }
   if (msg.type === 'start' && phase === 'idle') startRound();
   if (msg.type === 'hb') syncCalls();
@@ -570,10 +661,10 @@ function handle(msg){
 function startRound(){
   show('game');
   initCam().catch(() => {});
-  phase = 'prep'; sentSmile = false; smileSince = 0;
+  phase = 'prep'; sentSmile = false; smileSince = 0; smileFrames = 0;
   for (const v of document.querySelectorAll('#grid video')) v.play().catch(() => {});
   const pa = $('prepAv'); pa.className = '';
-  pa.innerHTML = roster.map((p, i) => '<div class="ring" style="animation-delay:' + (i*0.12) + 's,' + (0.6 + i*0.12) + 's"><b>' + avHtml(p) + '</b></div>').join('');
+  pa.innerHTML = roster.map((p, i) => '<div class="pa" style="animation-delay:' + (i*0.12) + 's,' + (0.6 + i*0.12) + 's"><div class="ring"><b>' + avHtml(p) + '</b></div><span>' + esc(p.name) + '</span></div>').join('');
   void pa.offsetWidth; pa.className = 'in';
   $('clock').textContent = '0:00.0';
   const p = $('prep'); p.style.display = 'flex';
@@ -605,7 +696,8 @@ function showLoser(m){
     $('cd').style.display = 'none'; $('cd').classList.remove('shake');
     $('loserName').textContent = m.name;
     $('loserImg').src = m.photo;
-    $('loserWhy').textContent = '😂 ' + (m.why || 'первым(-ой) улыбнулся(-ась)');
+    $('ph2').style.display = m.photo2 ? 'block' : 'none'; $('loserImg2').src = m.photo2 || '';
+    $('loserWhy').textContent = '😂 ' + (m.tie ? 'улыбнулись одновременно — проиграли оба' : (m.why || 'первым(-ой) улыбнулся(-ась)'));
     $('loserTime').textContent = 'продержался(-ась) ' + fmt(m.ms);
     $('reveal').style.display = 'flex';
     $('btnAgain').style.display = isHost ? 'block' : 'none';
@@ -630,10 +722,10 @@ async function createRoom(){
   await prepareDevice();
   $('status').textContent = 'Создаю комнату…';
   const code = code4();
-  onNet = hostNet; hostId = myId;
-  await netOpen(code, 'h', 'all', {type:'gone', mid: rid()});
+  hostId = myId; ep = 0;
+  await netOpen(code, 'all', {type:'gone', mid: rid()});
   players.clear();
-  players.set(myId, {name: myName, avatar: myAvatar, ready: myReady, seen: Infinity});
+  players.set(myId, {name: myName, avatar: myAvatar, ready: myReady, loss: 0, seen: Infinity});
   $('roomCode').textContent = code;
   showHostLobby();
   startVideo();
@@ -646,8 +738,8 @@ async function joinRoom(){
   isHost = false; inRoom = false;
   await prepareDevice();
   $('status').textContent = 'Подключаюсь к комнате ' + code + '…';
-  onNet = guestNet;
-  await netOpen(code, 'all', 'h', {type:'bye', mid: rid(), from: myId});
+  ep = 0;
+  await netOpen(code, 'h', {type:'bye', mid: rid(), from: myId});
   // зовём создателя, пока он не впишет нас в лобби
   const ok = await new Promise(res => {
     joinDone = () => res(true);
@@ -664,14 +756,25 @@ async function joinRoom(){
   $('roomCode').textContent = code;
   $('lobbyHint').textContent = 'Ждём, пока создатель нажмёт СТАРТ';
   $('btnStart').style.display = 'none'; $('btnInvite').style.display = 'none';
-  show('lobby');
+  if (!spectate()) show('lobby');
   startVideo();
 }
 
+function camHelp(e){
+  const n = e && e.name, ua = navigator.userAgent;
+  if (n === 'NotAllowedError' || n === 'SecurityError'){
+    if (window.Telegram && Telegram.WebApp && Telegram.WebApp.initData || /Telegram/i.test(ua)) return 'Телеграм не дал камеру. Нажми ⋯ → «Открыть в браузере» и разреши камеру там';
+    if (IOS) return 'Камера запрещена. Нажми «аА» слева в адресной строке → Настройки веб‑сайта → Камера → Разрешить, и обнови страницу';
+    return 'Камера запрещена. Нажми 🔒 слева от адреса → Разрешения → Камера → Разрешить, и обнови страницу';
+  }
+  if (n === 'NotReadableError' || n === 'AbortError') return 'Камера занята другим приложением (FaceTime, Инстаграм, звонок). Закрой его и нажми ещё раз';
+  if (n === 'NotFoundError' || n === 'OverconstrainedError') return 'Не нашёл фронтальную камеру на этом устройстве';
+  return 'Не получилось: ' + ((e && e.message) || e);
+}
 function guard(fn){ return async () => {
   $('homeErr').textContent = '';
   try { await fn(); }
-  catch(e){ show('home'); $('homeErr').textContent = e && e.name === 'NotAllowedError' ? 'Разреши доступ к камере в настройках браузера' : 'Не получилось: ' + (e.message || e); }
+  catch(e){ show('home'); $('homeErr').textContent = camHelp(e); }
 }; }
 
 const INVITE = (new URLSearchParams(location.search).get('r') || '').toUpperCase().slice(0, 4);
@@ -705,12 +808,10 @@ async function calibrate(){
     await new Promise(r => setTimeout(r, 50));
     if (v.readyState < 2 || v.currentTime === lt) continue;
     lt = v.currentTime;
-    const r = landmarker.detectForVideo(v, performance.now()), bs = r.faceBlendshapes && r.faceBlendshapes[0];
-    if (!bs) continue;
+    const x = detectRaw(v);
+    if (x === null || x === undefined) continue;
     if (!out.length) end = Math.min(end, performance.now() + 2500);
-    let l = 0, rr = 0;
-    for (const c of bs.categories){ if (c.categoryName === 'mouthSmileLeft') l = c.score; if (c.categoryName === 'mouthSmileRight') rr = c.score; }
-    out.push(Math.max(l, rr));
+    out.push(x);
   }
   return out;
 }
@@ -718,11 +819,12 @@ $('btnFace').onclick = async () => {
   unlockAudio();
   if (!landmarker){ $('faceHint').textContent = 'Ещё загружаю распознавание, секунду…'; return; }
   if (phase !== 'idle') return;
+  try { await initCam(); } catch(e){ $('faceHint').textContent = camHelp(e); return; }
   $('btnFace').disabled = true; $('faceHint').textContent = 'Замри… 😐';
   let calib = [];
   try { calib = await calibrate(); } catch(e){ console.warn('calib', e); }
   $('btnFace').disabled = false;
-  if (calib.length < 3){ $('faceHint').textContent = 'Лицо не видно — посмотри прямо в камеру и нажми ещё раз'; return; }
+  if (calib.length < 3){ $('faceHint').textContent = 'Лицо не нашёл 💡 Больше света, лицо целиком в рамку — и нажми ещё раз'; return; }
   const sorted = calib.slice().sort((a, b) => a - b), med = sorted[Math.floor(sorted.length/2)];
   if (med > 0.5){ $('faceHint').textContent = 'Ты улыбаешься 😏 Сделай серьёзное лицо и нажми ещё раз'; return; }
   baseline = Math.min(0.25, med);
