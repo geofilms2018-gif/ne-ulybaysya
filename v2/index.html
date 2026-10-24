@@ -185,6 +185,7 @@
 </section>
 
 <div id="toast"></div>
+<audio id="aOut" playsinline autoplay></audio>
 <audio id="sDun" src="../zvuki/dundun.mp3" preload="auto"></audio>
 <audio id="sRev" src="../zvuki/reveal.mp3" preload="auto"></audio>
 
@@ -256,7 +257,9 @@ function code4(){ const a='ABCDEFGHJKLMNPRSTUVWXYZ'; return Array.from({length:4
 let actx = null; const bufs = {};
 function unlockAudio(){
   try {
-    if (navigator.audioSession) navigator.audioSession.type = 'playback';  // звук и при выключенном звонке
+    // звук и при выключенном звонке; с открытым микрофоном — play-and-record, иначе iOS уводит звук в разговорный динамик
+    if (navigator.audioSession) navigator.audioSession.type = voice ? 'play-and-record' : 'playback';
+    if (voice) $('aOut').play().catch(() => {});
     if (!actx){
       actx = new (window.AudioContext || window.webkitAudioContext)();
       for (const [k, url] of [['dun','../zvuki/dundun.mp3'], ['rev','../zvuki/reveal.mp3']])
@@ -266,8 +269,17 @@ function unlockAudio(){
     const src = actx.createBufferSource(); src.buffer = actx.createBuffer(1, 1, 22050); src.connect(actx.destination); src.start(0);
   } catch(e){}
 }
+// iOS с открытым микрофоном играет WebAudio в разговорный динамик (у уха), а <audio> — в громкий.
+// Поэтому в режиме голоса весь звук WebAudio идёт через скрытый <audio>.
+let msDest = null;
+function outNode(){
+  if (!voice) return actx.destination;
+  if (!msDest){ msDest = actx.createMediaStreamDestination(); $('aOut').srcObject = msDest.stream; }
+  $('aOut').play().catch(() => {});
+  return msDest;
+}
 function play(k){
-  if (actx && bufs[k]){ if (actx.state !== 'running') actx.resume(); const s = actx.createBufferSource(); s.buffer = bufs[k]; s.connect(actx.destination); s.start(0); return; }
+  if (actx && bufs[k]){ if (actx.state !== 'running') actx.resume(); const s = actx.createBufferSource(); s.buffer = bufs[k]; s.connect(outNode()); s.start(0); return; }
   const a = $(k === 'dun' ? 'sDun' : 'sRev'); a.currentTime = 0; a.play().catch(() => {});
 }
 
@@ -704,7 +716,7 @@ function playPcm(id, d){
   for (let i = 0; i < i16.length; i++) ch[i] = i16[i] / 32768;
   const now = actx.currentTime; let at = pcmNext.get(id) || 0;
   if (at < now + 0.05 || at > now + 0.6) at = now + 0.12;   // джиттер-буфер: отстали или убежали — встаём заново
-  const src = actx.createBufferSource(); src.buffer = buf; src.connect(actx.destination); src.start(at);
+  const src = actx.createBufferSource(); src.buffer = buf; src.connect(outNode()); src.start(at);
   pcmNext.set(id, at + buf.duration); pcmLast.set(id, Date.now());
 }
 setInterval(fallbackTick, RL_MS);
