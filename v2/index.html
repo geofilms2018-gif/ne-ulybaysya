@@ -655,6 +655,17 @@ function syncCalls(){
   for (const r of roster) if (r.id !== myId) ensureTile(r.id);
   layoutGrid();
   if (!peer || !peer.open || !stream) return;
+  // мёртвые звонки (собеседник закрыл, связь порвалась) PeerJS не всегда сообщает — проверяем сами и перезваниваем
+  for (const [id, c] of [...calls]){
+    const pc = c.peerConnection, st = remote.get(id), now = Date.now();
+    const dead = !pc || ['failed', 'closed'].includes(pc.connectionState) || ['failed', 'closed'].includes(pc.iceConnectionState)
+      || (st && st.getVideoTracks().every(t => t.readyState === 'ended'));
+    const shaky = pc && pc.iceConnectionState === 'disconnected';   // бывает на секунду под нагрузкой — ждём дольше
+    if (!dead && !shaky){ c._bad = 0; continue; }
+    if (!c._bad){ c._bad = now; continue; }
+    if (now - c._bad < (dead ? 2000 : 8000)) continue;
+    calls.delete(id); remote.delete(id); clearTile(id, st); try { c.close(); } catch(e){}
+  }
   for (const id of [...calls.keys()]) if (!ids.has(id)){ try { calls.get(id).close(); } catch(e){} calls.delete(id); remote.delete(id); }
   for (const [k, c] of [...relays]) if (!ids.has(isHost ? k.split('|')[0] : k) || (isHost && !ids.has(k.split('|')[1]))){ relays.delete(k); try { c.close(); } catch(e){} }
   // звонит тот, у кого id «меньше», — чтобы двое не звонили друг другу одновременно
