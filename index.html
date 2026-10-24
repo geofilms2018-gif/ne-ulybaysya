@@ -114,10 +114,11 @@
 <section class="scr" id="res">
   <div id="cd">5</div>
   <div id="reveal">
-    <div class="tag">😂 первым улыбнулся</div>
+    <div class="tag" id="loserWhy"></div>
     <div id="loserName"></div>
     <div class="phring"><img id="loserImg" alt=""></div>
     <div class="tag" id="loserTime"></div>
+    <button class="sec" id="btnShare" style="display:none">Поделиться фоткой</button>
     <button class="grad" id="btnAgain" style="display:none">Ещё раз</button>
     <p id="againHint"></p>
   </div>
@@ -134,13 +135,16 @@ const $ = id => document.getElementById(id);
 const PREFIX = 'ne-ulybaysya-v1-';
 const SMILE_MIN = 0.45;      // минимальный порог улыбки
 const SMILE_OVER = 0.25;     // насколько выше спокойного лица
-const SMILE_HOLD_MS = 250;   // улыбка держится столько, чтобы засчитать
+const SMILE_HOLD_MS = 400;   // улыбка держится столько, чтобы засчитать
+const NOFACE_WARN_MS = 1000, NOFACE_LOSE_MS = 2500; // спрятал лицо = проиграл
+const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
 let isHost = false, peer = null, hostConn = null, myName = '';
 const players = new Map();   // хост: peerId -> {name, conn}
 let landmarker = null, stream = null;
 let phase = 'idle';          // idle | prep | run | done
-let t0 = 0, baseline = 0, calib = [], smileSince = 0, sentSmile = false;
+let t0 = 0, baseline = 0, calib = [], smileSince = 0, sentSmile = false, calibOn = false;
+let ema = null, noFaceSince = 0, lastVideoTime = -1, lastScore = null, modelReady = null, wakeLock = null;
 
 function ini(n){ return (n||'?').trim().charAt(0).toUpperCase() || '?'; }
 function esc(n){ return String(n).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
@@ -149,57 +153,98 @@ function feed(name, text){
   d.innerHTML = '<div class="ring"><b>' + esc(ini(name)) + '</b></div><div><em>' + esc(name) + '</em>' + esc(text) + '</div>';
   f.appendChild(d); while (f.children.length > 6) f.firstChild.remove();
 }
+function flyEmoji(e){
+  const h = document.createElement('div'); h.className = 'ht'; h.textContent = e;
+  h.style.setProperty('--dx', (Math.random()*60-40) + 'px');
+  $('hearts').appendChild(h); setTimeout(() => h.remove(), 2700);
+}
+const REACT = ['😂','🤡','🍑','💀','🫦','🤪','🐸','🍆'];
 function heart(){
   const h = document.createElement('div'); h.className = 'ht';
   h.textContent = ['❤️','🔥','😐','🫣','💀'][Math.floor(Math.random()*5)];
   h.style.setProperty('--dx', (Math.random()*60-40) + 'px');
   $('hearts').appendChild(h); setTimeout(() => h.remove(), 2700);
 }
-setInterval(() => { if (phase === 'run' && Math.random() < .6) heart(); }, 450);
+setInterval(() => { if (phase === 'run' && Math.random() < .25) heart(); }, 700);
+// тап по экрану в раунде — летит смешная реакция всем, чтобы рассмешить
+let lastReact = 0;
+document.addEventListener('pointerdown', ev => {
+  if (phase !== 'run' || ev.target.closest('button,input')) return;
+  const now = performance.now(); if (now - lastReact < 250) return; lastReact = now;
+  const e = REACT[Math.floor(Math.random()*REACT.length)];
+  if (isHost) broadcast({type:'react', e}); else { flyEmoji(e); send(hostConn, {type:'react', e}); }
+});
 function show(id){ document.querySelectorAll('.scr').forEach(s => s.classList.toggle('on', s.id === id)); }
 function fmt(ms){ const s = ms/1000; return Math.floor(s/60) + ':' + (s%60).toFixed(1).padStart(4,'0'); }
 function code4(){ const a='ABCDEFGHJKLMNPRSTUVWXYZ'; return Array.from({length:4},()=>a[Math.floor(Math.random()*a.length)]).join(''); }
 
 // iOS открывает звук и камеру только после нажатия — разблокируем звуки на первом тапе
+let actx = null; const bufs = {};
 function unlockAudio(){
-  for (const a of [$('sDun'), $('sRev')]) { a.muted = true; a.play().then(()=>{a.pause(); a.currentTime=0; a.muted=false;}).catch(()=>{}); }
+  try {
+    if (navigator.audioSession) navigator.audioSession.type = 'playback';  // звук и при выключенном звонке
+    if (!actx){
+      actx = new (window.AudioContext || window.webkitAudioContext)();
+      for (const [k, url] of [['dun','zvuki/dundun.mp3'], ['rev','zvuki/reveal.mp3']])
+        fetch(url).then(r => r.arrayBuffer()).then(b => actx.decodeAudioData(b)).then(d => { bufs[k] = d; }).catch(() => {});
+    }
+    if (actx.state !== 'running') actx.resume();
+    const src = actx.createBufferSource(); src.buffer = actx.createBuffer(1, 1, 22050); src.connect(actx.destination); src.start(0);
+  } catch(e){}
+}
+function play(k){
+  if (actx && bufs[k]){ if (actx.state !== 'running') actx.resume(); const s = actx.createBufferSource(); s.buffer = bufs[k]; s.connect(actx.destination); s.start(0); return; }
+  const a = $(k === 'dun' ? 'sDun' : 'sRev'); a.currentTime = 0; a.play().catch(() => {});
 }
 
+async function keepAwake(){ try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch(e){} }
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && stream) keepAwake(); });
+
 async function initCam(){
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('Камера недоступна. Открой ссылку в Safari или Chrome, а не внутри Телеграма или Инстаграма');
+  if (stream && stream.active && stream.getVideoTracks().every(t => t.readyState === 'live')){ $('cam').play().catch(()=>{}); return; }
   stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'user', width:{ideal:640}, height:{ideal:480}}, audio:false});
   $('cam').srcObject = stream;
   await $('cam').play();
 }
 
-async function initModel(){
+function initModel(){ return modelReady || (modelReady = loadModel().catch(e => { modelReady = null; throw e; })); }
+async function loadModel(){
   const fs = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
   const opts = d => ({baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task", delegate:d},
                       runningMode:'VIDEO', numFaces:1, outputFaceBlendshapes:true});
+  if (IOS){ landmarker = await FaceLandmarker.createFromOptions(fs, opts('CPU')); return; }
   try { landmarker = await FaceLandmarker.createFromOptions(fs, opts('GPU')); }
   catch(e){ landmarker = await FaceLandmarker.createFromOptions(fs, opts('CPU')); }
 }
 
+let loopOn = false;
 async function prepareDevice(){
   unlockAudio();
   show('game');
   $('meAv').textContent = ini(myName); $('meName').textContent = myName;
   $('status').textContent = 'Включаю камеру…';
   await initCam();
+  keepAwake();
   $('status').textContent = 'Загружаю распознавание…';
   await initModel();
   $('status').textContent = 'Готов. Ждём старт';
-  requestAnimationFrame(loop);
+  if (!loopOn){ loopOn = true; requestAnimationFrame(loop); }
 }
 
 function smileScore(){
   const v = $('cam');
   if (!landmarker || v.readyState < 2) return null;
+  if (v.currentTime === lastVideoTime) return lastScore;
+  lastVideoTime = v.currentTime;
   const r = landmarker.detectForVideo(v, performance.now());
   const bs = r.faceBlendshapes && r.faceBlendshapes[0];
-  if (!bs) return null;
+  if (!bs){ ema = null; return (lastScore = null); }
   let l = 0, rr = 0;
   for (const c of bs.categories){ if (c.categoryName === 'mouthSmileLeft') l = c.score; if (c.categoryName === 'mouthSmileRight') rr = c.score; }
-  return (l + rr) / 2;
+  const raw = Math.max(l, rr);
+  ema = ema === null ? raw : ema * 0.5 + raw * 0.5;
+  return (lastScore = ema);
 }
 
 function snapshot(){
@@ -210,22 +255,29 @@ function snapshot(){
 }
 
 function loop(){
-  const s = smileScore();
+  requestAnimationFrame(loop);
+  if (phase !== 'prep' && phase !== 'run') return;
+  const s = smileScore(), now = performance.now();
   if (s !== null) $('meter').style.width = Math.min(100, s*100) + '%';
-  if (phase === 'prep' && s !== null) calib.push(s);
+  if (phase === 'prep' && calibOn && s !== null) calib.push(s);
   if (phase === 'run'){
-    $('clock').textContent = fmt(performance.now() - t0);
-    if (s === null) $('status').textContent = 'Лицо не видно!';
-    else {
+    $('clock').textContent = fmt(now - t0);
+    if (s === null){
+      if (!noFaceSince) noFaceSince = now;
+      const gone = now - noFaceSince;
+      $('status').textContent = gone > NOFACE_WARN_MS ? '⚠️ Покажи лицо! ' + Math.max(0, (NOFACE_LOSE_MS - gone)/1000).toFixed(1) : 'Лицо не видно';
+      if (!sentSmile && gone > NOFACE_LOSE_MS){ sentSmile = true; reportSmile(snapshot(), 'спрятал(а) лицо'); }
+      smileSince = 0;
+    } else {
+      noFaceSince = 0;
       $('status').textContent = 'Держись…';
       const thr = Math.max(SMILE_MIN, baseline + SMILE_OVER);
       if (s > thr){
         if (!smileSince) smileSince = performance.now();
-        if (!sentSmile && performance.now() - smileSince > SMILE_HOLD_MS){ sentSmile = true; reportSmile(snapshot()); }
+        if (!sentSmile && now - smileSince > SMILE_HOLD_MS){ sentSmile = true; reportSmile(snapshot(), 'первым(-ой) улыбнулся(-ась)'); }
       } else smileSince = 0;
     }
   }
-  requestAnimationFrame(loop);
 }
 
 // ---------- сеть ----------
@@ -233,16 +285,26 @@ function send(conn, msg){ try { conn.open && conn.send(msg); } catch(e){} }
 function broadcast(msg){ for (const p of players.values()) if (p.conn) send(p.conn, msg); handle(msg); }
 function lobbyList(){ return [...players.values()].map(p => p.name); }
 
-function reportSmile(photo){
-  if (isHost) hostGotSmile(myName, photo);
-  else send(hostConn, {type:'smile', photo});
+function reportSmile(photo, why){
+  const ms = performance.now() - t0;
+  if (isHost) hostGotSmile(myName, photo, ms, why);
+  else send(hostConn, {type:'smile', photo, ms, why});
 }
 
-let hostStart = 0, loserTaken = false;
-function hostGotSmile(name, photo){
+let hostStart = 0, loserTaken = false, cands = [];
+function hostGotSmile(name, photo, ms, why){
   if (loserTaken || phase !== 'run') return;
-  loserTaken = true;
-  broadcast({type:'loser', name, photo, ms: performance.now() - hostStart});
+  if (typeof photo !== 'string' || !photo.startsWith('data:image/jpeg')) photo = '';
+  if (!(ms > 0)) ms = performance.now() - hostStart;
+  cands.push({name, photo, ms, why: why || ''});
+  if (cands.length > 1) return;
+  // ждём 400 мс: вдруг чья-то улыбка случилась раньше, но дольше ехала по сети
+  setTimeout(() => {
+    if (loserTaken) return;
+    loserTaken = true;
+    const m = cands.reduce((a, b) => b.ms < a.ms ? b : a);
+    broadcast({type:'loser', ...m});
+  }, 400);
 }
 
 function handle(msg){
@@ -250,7 +312,8 @@ function handle(msg){
     $('players').innerHTML = msg.players.map(n => '<div class="av"><div class="ring"><b>' + esc(ini(n)) + '</b></div><span>' + esc(n) + '</span></div>').join('');
     $('viewers').textContent = msg.players.length;
   }
-  if (msg.type === 'start') startRound();
+  if (msg.type === 'start' && phase === 'idle') startRound();
+  if (msg.type === 'react') flyEmoji(msg.e);
   if (msg.type === 'feed') feed(msg.name, msg.text);
   if (msg.type === 'loser') showLoser(msg);
   if (msg.type === 'reset'){ phase = 'idle'; show('game'); $('clock').textContent = '0:00.0'; $('status').textContent = 'Готов. Ждём старт'; if (isHost) showHostLobby(); else show('lobby'); }
@@ -258,21 +321,23 @@ function handle(msg){
 
 function startRound(){
   show('game');
+  initCam().catch(() => {});
   phase = 'prep'; calib = []; sentSmile = false; smileSince = 0;
   $('clock').textContent = '0:00.0';
   const p = $('prep'); p.style.display = 'flex';
   $('feed').innerHTML = ''; $('livePill').style.visibility = 'hidden'; p.classList.remove('go');
-  let n = 4; p.textContent = 3; n = 3;
+  let n = 3; p.textContent = n;
+  calibOn = false; noFaceSince = 0;
   const iv = setInterval(() => {
     n--;
-    if (n > 0){ p.textContent = n; return; }
+    if (n > 0){ p.textContent = n; calibOn = true; return; }
     if (n === 0){ p.textContent = 'GO'; p.classList.add('go'); return; }
     clearInterval(iv); p.style.display = 'none';
     const sorted = calib.slice().sort((a,b)=>a-b);
-    baseline = sorted.length ? sorted[Math.floor(sorted.length/2)] : 0;
-    t0 = performance.now(); if (isHost){ hostStart = t0; loserTaken = false; }
+    baseline = Math.min(0.25, sorted.length ? sorted[Math.floor(sorted.length/2)] : 0);
+    t0 = performance.now(); if (isHost){ hostStart = t0; loserTaken = false; cands = []; }
     phase = 'run'; $('livePill').style.visibility = 'visible';
-    feed('эфир', ' начался. Кто первый улыбнётся — проиграл 😐');
+    feed('эфир', ' начался. Кто первый улыбнётся — проиграл 😐 Тапай по экрану, чтобы рассмешить');
   }, 1000);
 }
 
@@ -280,7 +345,7 @@ function showLoser(m){
   phase = 'done';
   show('res');
   $('reveal').style.display = 'none'; $('cd').style.display = 'block'; $('cd').classList.add('shake');
-  const dun = $('sDun'); dun.currentTime = 0; dun.play().catch(()=>{});
+  play('dun');
   let n = 5; $('cd').textContent = n;
   const iv = setInterval(() => {
     n--;
@@ -289,11 +354,14 @@ function showLoser(m){
     $('cd').style.display = 'none'; $('cd').classList.remove('shake');
     $('loserName').textContent = m.name;
     $('loserImg').src = m.photo;
-    $('loserTime').textContent = 'продержался ' + fmt(m.ms);
+    $('loserWhy').textContent = '😂 ' + (m.why || 'первым(-ой) улыбнулся(-ась)');
+    $('loserTime').textContent = 'продержался(-ась) ' + fmt(m.ms);
     $('reveal').style.display = 'flex';
     $('btnAgain').style.display = isHost ? 'block' : 'none';
+    $('btnShare').style.display = (m.photo && navigator.canShare) ? 'block' : 'none';
+    lastLoser = m;
     $('againHint').textContent = isHost ? '' : 'Ждём, пока создатель комнаты нажмёт «Ещё раз»';
-    const rv = $('sRev'); rv.currentTime = 0; rv.play().catch(()=>{});
+    play('rev');
   }, 1000);
 }
 
@@ -307,8 +375,11 @@ function showHostLobby(){
 async function createRoom(){
   myName = ($('name').value.trim() || 'Игрок');
   isHost = true;
-  const code = code4();
   await prepareDevice();
+  openHostPeer(code4());
+}
+
+function openHostPeer(code){
   peer = new Peer(PREFIX + code);
   peer.on('open', () => {
     $('roomCode').textContent = code;
@@ -318,14 +389,16 @@ async function createRoom(){
   peer.on('connection', conn => {
     conn.on('data', msg => {
       if (msg.type === 'hello'){ players.set(conn.peer, {name: msg.name, conn}); broadcast({type:'lobby', players: lobbyList()}); broadcast({type:'feed', name: msg.name, text:'присоединился(-ась) к эфиру'}); }
-      if (msg.type === 'smile'){ const p = players.get(conn.peer); hostGotSmile(p ? p.name : '?', msg.photo); }
+      if (msg.type === 'react'){ for (const [id, p] of players) if (p.conn && id !== conn.peer) send(p.conn, msg); flyEmoji(msg.e); }
+      if (msg.type === 'smile'){ const p = players.get(conn.peer); hostGotSmile(p ? p.name : '?', msg.photo, msg.ms, msg.why); }
     });
     conn.on('close', () => { players.delete(conn.peer); broadcast({type:'lobby', players: lobbyList()}); });
   });
   peer.on('error', e => {
-    if (e.type === 'unavailable-id'){ peer.destroy(); isHost = false; createRoom(); return; }
+    if (e.type === 'unavailable-id'){ peer.destroy(); openHostPeer(code4()); return; }
     $('lobbyErr').textContent = 'Ошибка связи: ' + e.type;
   });
+  peer.on('disconnected', () => { if (!peer.destroyed) peer.reconnect(); });
 }
 
 async function joinRoom(){
@@ -333,10 +406,15 @@ async function joinRoom(){
   const code = $('code').value.trim().toUpperCase();
   if (code.length !== 4){ $('homeErr').textContent = 'Введи код из 4 букв'; return; }
   await prepareDevice();
+  let joined = false;
+  const to = setTimeout(() => { if (!joined){ show('home'); $('homeErr').textContent = 'Не удалось подключиться. Проверь код или попробуй через Wi‑Fi'; try { peer.destroy(); } catch(e){} } }, 12000);
   peer = new Peer();
+  peer.on('disconnected', () => { if (!peer.destroyed) peer.reconnect(); });
   peer.on('open', () => {
+    if (hostConn && hostConn.open) return;
     hostConn = peer.connect(PREFIX + code, {reliable: true});
     hostConn.on('open', () => {
+      joined = true; clearTimeout(to);
       send(hostConn, {type:'hello', name: myName});
       $('roomCode').textContent = code;
       $('lobbyHint').textContent = 'Ждём, пока создатель нажмёт СТАРТ';
@@ -346,7 +424,8 @@ async function joinRoom(){
     hostConn.on('close', () => { show('lobby'); $('lobbyErr').textContent = 'Создатель комнаты отключился'; });
   });
   peer.on('error', e => {
-    show('home');
+    if (joined){ $('lobbyErr').textContent = 'Связь шалит: ' + e.type; return; }
+    clearTimeout(to); show('home');
     $('homeErr').textContent = e.type === 'peer-unavailable' ? 'Комната не найдена' : 'Ошибка связи: ' + e.type;
   });
 }
@@ -359,8 +438,19 @@ function guard(fn){ return async () => {
 
 $('btnCreate').onclick = guard(createRoom);
 $('btnJoin').onclick = guard(joinRoom);
-$('btnStart').onclick = () => { if (players.size) broadcast({type:'start'}); };
-$('btnAgain').onclick = () => broadcast({type:'reset'});
+$('btnStart').onclick = () => { unlockAudio(); if (phase === 'idle' && players.size) broadcast({type:'start'}); };
+let lastLoser = null;
+$('btnShare').onclick = async () => {
+  try {
+    const blob = await (await fetch(lastLoser.photo)).blob();
+    const file = new File([blob], 'ne-ulybaysya.jpg', {type: 'image/jpeg'});
+    const data = {files: [file], text: lastLoser.name + ' не выдержал(а) 😂'};
+    if (navigator.canShare(data)) await navigator.share(data);
+  } catch(e){}
+};
+$('btnAgain').onclick = () => { unlockAudio(); broadcast({type:'reset'}); };
+document.addEventListener('touchend', unlockAudio, {once: true});
+initModel().catch(() => {});   // модель (~10 МБ) грузим сразу на главном экране
 </script>
 </body>
 </html>
