@@ -94,14 +94,11 @@
   <div class="logo">😐</div>
   <h1>НЕ <span>УЛЫБАЙСЯ</span></h1>
   <p>Кто первый улыбнётся — проиграл</p>
-  <button class="grad" id="btnPlay" style="font-size:24px;padding:20px">ИГРАТЬ</button>
+  <input id="name" placeholder="Твоё имя" maxlength="14" autocomplete="off">
+  <button class="grad" id="btnPlay" style="font-size:20px;padding:18px">➕ Создать комнату</button>
+  <p style="margin:4px 0 -4px">или войди к друзьям</p>
+  <div class="row"><input id="code" class="code" placeholder="КОД" maxlength="4" autocomplete="off" autocapitalize="characters"><button class="sec" id="btnJoin" style="max-width:140px">Войти</button></div>
   <p id="inviteHint" style="display:none"></p>
-  <details style="width:100%;max-width:340px;color:var(--mut)"><summary style="font-size:14px;padding:6px">имя и вход по коду</summary>
-    <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px">
-      <input id="name" placeholder="Твоё имя (необязательно)" maxlength="14" autocomplete="off">
-      <div class="row"><input id="code" class="code" placeholder="КОД" maxlength="4" autocomplete="off"><button class="sec" id="btnJoin" style="max-width:130px">Войти</button></div>
-    </div>
-  </details>
   <p id="homeErr" class="err"></p>
 </section>
 
@@ -156,22 +153,23 @@
 <audio id="sRev" src="../zvuki/reveal.mp3" preload="auto"></audio>
 
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js"></script>
 <script type="module">
 import {FaceLandmarker, FilesetResolver} from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
 
 const $ = id => document.getElementById(id);
-const PREFIX = 'ne-ulybaysya-v1-';
+const PREFIX = 'ne-ulybaysya-v2-';   // id для видео (WebRTC)
 const SMILE_MIN = 0.45;      // минимальный порог улыбки
 const SMILE_OVER = 0.25;     // насколько выше спокойного лица
-const SMILE_HOLD_MS = 400;   // улыбка держится столько, чтобы засчитать
+const SMILE_HOLD_MS = 200;   // улыбка держится 0,2 с — проиграл
 const NOFACE_WARN_MS = 1000, NOFACE_LOSE_MS = 2500; // спрятал лицо = проиграл
 const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
-let isHost = false, peer = null, hostConn = null, myName = '';
-const players = new Map();   // хост: peerId -> {name, conn}
+let isHost = false, peer = null, myName = '';
+const players = new Map();   // хост: id -> {name, avatar, ready, seen}
 let landmarker = null, stream = null;
 let phase = 'idle';          // idle | prep | run | done
-let t0 = 0, baseline = 0, calib = [], smileSince = 0, sentSmile = false, calibOn = false;
+let t0 = 0, baseline = 0, smileSince = 0, sentSmile = false;
 let myAvatar = '', myReady = false, roster = [], calls = new Map();
 let lastFaceShot = '', lastShotAt = 0, ema = null, noFaceSince = 0, lastVideoTime = -1, lastScore = null, modelReady = null, wakeLock = null;
 
@@ -201,7 +199,7 @@ document.addEventListener('pointerdown', ev => {
   if (phase !== 'run' || ev.target.closest('button,input')) return;
   const now = performance.now(); if (now - lastReact < 250) return; lastReact = now;
   const e = REACT[Math.floor(Math.random()*REACT.length)];
-  if (isHost) broadcast({type:'react', e}); else { flyEmoji(e); send(hostConn, {type:'react', e}); }
+  if (isHost) broadcast({type:'react', e, by: myId}); else { flyEmoji(e); toHost({type:'react', e}); }
 });
 const NICKS = ['Кирпич','Покерфейс','Камень','Сфинкс','Бетон','Робот','Терминатор','Шрек','Бульдог','Монах'];
 function getName(){
@@ -269,6 +267,7 @@ async function prepareDevice(){
   keepAwake();
   $('status').textContent = 'Загружаю распознавание…';
   await initModel();
+  try { if ($('cam').readyState >= 2) landmarker.detectForVideo($('cam'), performance.now()); } catch(e){}   // прогрев: первый кадр самый медленный
   $('status').textContent = 'Готов. Ждём старт';
   $('pv').srcObject = stream; $('pv').play().catch(() => {});
   if (!loopOn){ loopOn = true; requestAnimationFrame(loop); }
@@ -298,10 +297,9 @@ function snapshot(){
 
 function loop(){
   requestAnimationFrame(loop);
-  if (phase !== 'prep' && phase !== 'run' && phase !== 'calib') return;
+  if (phase !== 'prep' && phase !== 'run') return;
   const s = smileScore(), now = performance.now();
   if (s !== null) $('meter').style.width = Math.min(100, s*100) + '%';
-  if (phase === 'calib' && s !== null) calib.push(s);
   if (phase === 'run'){
     $('clock').textContent = fmt(now - t0);
     if (s === null){
@@ -324,9 +322,96 @@ function loop(){
 }
 
 // ---------- сеть ----------
-function send(conn, msg){ try { conn.open && conn.send(msg); } catch(e){} }
-function broadcast(msg){ for (const p of players.values()) if (p.conn) send(p.conn, msg); handle(msg); }
+// Игровые сообщения идут через два публичных MQTT-брокера (WSS): им не мешает NAT сотовой сети.
+// Каждое сообщение уходит в оба, дубли отбрасываются по mid. WebRTC — только для видео.
+const BROKERS = ['wss://broker.emqx.io:8084/mqtt', 'wss://broker.hivemq.com:8884/mqtt'];
+const rid = () => Math.random().toString(36).slice(2, 12);
+const myId = rid();
+let room = '', clients = [], onNet = null, inRoom = false, lastHost = 0, lastHello = 0;
+const seen = new Set(), seenQ = [];
+function topic(k){ return 'ne-ulybaysya/v2/' + room + '/' + k; }   // h — создателю, all — всем
+function netClose(){ for (const c of clients) try { c.end(true); } catch(e){} clients = []; }
+function netOpen(code, sub, willKey, will){
+  netClose(); room = code;
+  return new Promise((resolve, reject) => {
+    let up = false;
+    const to = setTimeout(() => { if (!up) reject(new Error('Нет связи с сервером игры. Проверь интернет')); }, 12000);
+    for (const url of BROKERS){
+      const c = mqtt.connect(url, {clientId: 'nu_' + myId + '_' + rid().slice(0, 4), keepalive: 20, reconnectPeriod: 2000, connectTimeout: 8000,
+        will: {topic: topic(willKey), payload: JSON.stringify(will), qos: 1}});
+      c.on('connect', () => c.subscribe(topic(sub), {qos: 1}, err => { if (!err && !up){ up = true; clearTimeout(to); resolve(); } }));
+      c.on('message', (t, buf) => {
+        let m; try { m = JSON.parse(buf.toString()); } catch(e){ return; }
+        if (!m || !m.mid || seen.has(m.mid)) return;
+        seen.add(m.mid); seenQ.push(m.mid); if (seenQ.length > 1000) seen.delete(seenQ.shift());
+        if (onNet) onNet(m);
+      });
+      c.on('error', () => {});
+      clients.push(c);
+    }
+  });
+}
+function pub(k, msg){
+  msg.mid = rid(); msg.from = myId;
+  const data = JSON.stringify(msg);
+  for (const c of clients) try { c.publish(topic(k), data, {qos: 1}); } catch(e){}
+}
+function toHost(msg){ pub('h', msg); }
+function broadcast(msg){ pub('all', msg); handle(msg); }
+function sendLobby(){ broadcast({type:'lobby', players: lobbyList()}); }
 function lobbyList(){ return [...players.entries()].map(([id, p]) => ({id, name: p.name, avatar: p.avatar || '', ready: !!p.ready})); }
+
+// создатель: принимает сообщения гостей
+function hostNet(m){
+  const id = m.from; if (!id || id === myId) return;
+  const p = players.get(id);
+  if (m.type === 'hello'){
+    players.set(id, {name: String(m.name || '?').slice(0, 14), avatar: p ? p.avatar : '', ready: p ? p.ready : false, seen: Date.now()});
+    sendLobby();
+    if (!p) broadcast({type:'feed', name: String(m.name || '?').slice(0, 14), text:'присоединился(-ась) к эфиру'});
+    return;
+  }
+  if (!p) return;
+  p.seen = Date.now();
+  if (m.type === 'ready'){ p.avatar = okAvatar(m.avatar); p.ready = true; sendLobby(); }
+  if (m.type === 'react') broadcast({type:'react', e: String(m.e).slice(0, 4), by: id});
+  if (m.type === 'smile') hostGotSmile(p.name, m.photo, m.ms, m.why);
+  if (m.type === 'bye'){ players.delete(id); sendLobby(); }
+}
+// гость: слушает создателя
+let joinDone = null;
+function hello(){
+  if (Date.now() - lastHello < 1500) return; lastHello = Date.now();
+  toHost({type:'hello', name: myName});
+  if (myReady) toHost({type:'ready', avatar: myAvatar});
+}
+function guestNet(m){
+  lastHost = Date.now();
+  if (m.type === 'gone'){ $('lobbyErr').textContent = 'Создатель комнаты вышел из игры'; return; }
+  if (m.type === 'lobby'){
+    const me = m.players.some(p => p.id === myId);
+    if (!me){ hello(); if (!inRoom) return; }
+    else if (!inRoom){ inRoom = true; if (joinDone) joinDone(); }
+  }
+  if (!inRoom) return;
+  if (m.type === 'react' && m.by === myId) return;
+  handle(m);
+}
+setInterval(() => {
+  if (!room) return;
+  if (isHost){
+    broadcast({type:'hb'});
+    let ch = false;
+    for (const [id, p] of players) if (id !== myId && Date.now() - p.seen > 12000){ players.delete(id); ch = true; }
+    if (ch) sendLobby();
+  } else if (inRoom){
+    toHost({type:'ping'});
+    const lost = Date.now() - lastHost > 12000, e = $('lobbyErr');
+    if (lost) e.textContent = 'Нет связи с создателем комнаты… переподключаюсь';
+    else if (e.textContent.startsWith('Нет связи')) e.textContent = '';
+  }
+}, 3000);
+window.addEventListener('pagehide', () => { if (room) pub(isHost ? 'all' : 'h', {type: isHost ? 'gone' : 'bye'}); });
 function avHtml(p){ return p.avatar ? '<img src="' + p.avatar + '" alt="">' : esc(ini(p.name)); }
 function okAvatar(a){ return typeof a === 'string' && a.startsWith('data:image/jpeg') && a.length < 80000 ? a : ''; }
 
@@ -344,26 +429,47 @@ function addTile(id, st){
   layoutGrid();
 }
 function removeTile(id){ const t = document.querySelector('.tile[data-id="' + CSS.escape(id) + '"]'); if (t) t.remove(); calls.delete(id); layoutGrid(); }
-function wireCall(c){
-  calls.set(c.peer, c);
-  c.on('stream', st => addTile(c.peer, st));
-  c.on('close', () => removeTile(c.peer));
-  c.on('error', () => removeTile(c.peer));
+function wireCall(c, id){
+  if (!c) return;
+  calls.set(id, c);
+  // нет картинки за 10 с — бросаем звонок, следующий пульс позвонит заново
+  const to = setTimeout(() => { if (calls.get(id) === c){ calls.delete(id); try { c.close(); } catch(e){} } }, 10000);
+  c.on('stream', st => { clearTimeout(to); if (calls.get(id) === c) addTile(id, st); });
+  const end = () => { clearTimeout(to); if (calls.get(id) === c) removeTile(id); };
+  c.on('close', end); c.on('error', end);
 }
-function onIncomingCall(c){ c.answer(stream); wireCall(c); }
+function onIncomingCall(c){
+  const id = c.peer.slice(PREFIX.length), old = calls.get(id);
+  calls.delete(id); if (old) try { old.close(); } catch(e){}
+  c.answer(stream); wireCall(c, id);
+}
+function startVideo(){
+  if (peer && !peer.destroyed) return;
+  peer = new Peer(PREFIX + myId);
+  peer.on('open', syncCalls);
+  peer.on('call', onIncomingCall);
+  peer.on('disconnected', () => { if (!peer.destroyed) peer.reconnect(); });
+  peer.on('error', e => {   // без видео играть всё равно можно
+    // собеседник ещё не зарегистрировался — бросаем звонок, следующий пульс (3 с) позвонит снова
+    if (e.type !== 'peer-unavailable') return;
+    for (const [id, c] of calls) if (String(e.message).includes(PREFIX + id)){ calls.delete(id); try { c.close(); } catch(_){} }
+  });
+}
 function syncCalls(){
-  if (!peer || !stream) return;
+  if (!peer || !peer.open || !stream) return;
   const ids = new Set(roster.map(r => r.id));
   for (const id of [...calls.keys()]) if (!ids.has(id)){ try { calls.get(id).close(); } catch(e){} removeTile(id); }
+  for (const t of document.querySelectorAll('.tile:not([data-id="me"])')) if (!ids.has(t.dataset.id)) t.remove();
   // звонит тот, у кого id «меньше», — чтобы двое не звонили друг другу одновременно
-  for (const r of roster) if (r.id !== peer.id && !calls.has(r.id) && peer.id < r.id) wireCall(peer.call(r.id, stream));
+  for (const r of roster) if (r.id !== myId && !calls.has(r.id) && myId < r.id) wireCall(peer.call(PREFIX + r.id, stream), r.id);
   for (const t of document.querySelectorAll('.tile')){ const p = roster.find(r => r.id === t.dataset.id); if (p) t.querySelector('.tname').textContent = p.name; }
+  layoutGrid();
 }
 
 function reportSmile(photo, why){
   const ms = performance.now() - t0;
   if (isHost) hostGotSmile(myName, photo, ms, why);
-  else send(hostConn, {type:'smile', photo, ms, why});
+  else toHost({type:'smile', photo, ms, why});
 }
 
 let hostStart = 0, loserTaken = false, cands = [];
@@ -393,6 +499,7 @@ function handle(msg){
     syncCalls();
   }
   if (msg.type === 'start' && phase === 'idle') startRound();
+  if (msg.type === 'hb') syncCalls();
   if (msg.type === 'react') flyEmoji(msg.e);
   if (msg.type === 'feed') feed(msg.name, msg.text);
   if (msg.type === 'loser') showLoser(msg);
@@ -411,11 +518,11 @@ function startRound(){
   const p = $('prep'); p.style.display = 'flex';
   $('feed').innerHTML = ''; $('livePill').style.visibility = 'hidden'; p.classList.remove('go');
   let n = 3; p.textContent = n;
-  calibOn = false; noFaceSince = 0; lastFaceShot = ''; lastShotAt = 0;
+  noFaceSince = 0; lastFaceShot = ''; lastShotAt = 0;
   $('status').textContent = 'Приготовились…';
   const iv = setInterval(() => {
     n--;
-    if (n > 0){ p.textContent = n; calibOn = true; return; }
+    if (n > 0){ p.textContent = n; return; }
     if (n === 0){ p.textContent = 'GO'; p.classList.add('go'); pa.className = 'out'; return; }
     clearInterval(iv); p.style.display = 'none'; pa.innerHTML = '';
     t0 = performance.now(); if (isHost){ hostStart = t0; loserTaken = false; cands = []; }
@@ -453,69 +560,51 @@ function showHostLobby(){
   $('btnStart').style.display = 'block';
   $('lobbyHint').textContent = 'Отправь друзьям ссылку — они нажмут одну кнопку';
   $('btnInvite').style.display = 'block';
-  broadcast({type:'lobby', players: lobbyList()});
+  sendLobby();
 }
 
 async function createRoom(){
   myName = getName();
-  isHost = true;
+  isHost = true; inRoom = false;
   await prepareDevice();
-  openHostPeer(code4());
-}
-
-function openHostPeer(code){
-  peer = new Peer(PREFIX + code);
-  peer.on('open', () => {
-    $('roomCode').textContent = code;
-    players.set(peer.id, {name: myName, conn: null, avatar: myAvatar, ready: myReady});
-    showHostLobby();
-  });
-  peer.on('call', onIncomingCall);
-  peer.on('connection', conn => {
-    conn.on('data', msg => {
-      if (msg.type === 'hello'){ players.set(conn.peer, {name: msg.name, conn}); broadcast({type:'lobby', players: lobbyList()}); broadcast({type:'feed', name: msg.name, text:'присоединился(-ась) к эфиру'}); }
-      if (msg.type === 'ready'){ const p = players.get(conn.peer); if (p){ p.avatar = okAvatar(msg.avatar); p.ready = true; broadcast({type:'lobby', players: lobbyList()}); } }
-      if (msg.type === 'react'){ for (const [id, p] of players) if (p.conn && id !== conn.peer) send(p.conn, msg); flyEmoji(msg.e); }
-      if (msg.type === 'smile'){ const p = players.get(conn.peer); hostGotSmile(p ? p.name : '?', msg.photo, msg.ms, msg.why); }
-    });
-    conn.on('close', () => { players.delete(conn.peer); broadcast({type:'lobby', players: lobbyList()}); });
-  });
-  peer.on('error', e => {
-    if (e.type === 'unavailable-id'){ peer.destroy(); openHostPeer(code4()); return; }
-    $('lobbyErr').textContent = 'Ошибка связи: ' + e.type;
-  });
-  peer.on('disconnected', () => { if (!peer.destroyed) peer.reconnect(); });
+  $('status').textContent = 'Создаю комнату…';
+  const code = code4();
+  onNet = hostNet;
+  await netOpen(code, 'h', 'all', {type:'gone', mid: rid()});
+  players.clear();
+  players.set(myId, {name: myName, avatar: myAvatar, ready: myReady, seen: Infinity});
+  $('roomCode').textContent = code;
+  showHostLobby();
+  startVideo();
 }
 
 async function joinRoom(){
   myName = getName();
-  const code = ($('code').value.trim() || INVITE).toUpperCase();
-  if (code.length !== 4){ $('homeErr').textContent = 'Введи код из 4 букв'; return; }
+  const code = $('code').value.trim().toUpperCase();
+  if (!/^[A-Z]{4}$/.test(code)){ $('homeErr').textContent = 'Введи код из 4 букв'; return; }
+  isHost = false; inRoom = false;
   await prepareDevice();
-  let joined = false;
-  const to = setTimeout(() => { if (!joined){ show('home'); $('homeErr').textContent = 'Не удалось подключиться. Проверь код или попробуй через Wi‑Fi'; try { peer.destroy(); } catch(e){} } }, 12000);
-  peer = new Peer();
-  peer.on('call', onIncomingCall);
-  peer.on('disconnected', () => { if (!peer.destroyed) peer.reconnect(); });
-  peer.on('open', () => {
-    if (hostConn && hostConn.open) return;
-    hostConn = peer.connect(PREFIX + code, {reliable: true});
-    hostConn.on('open', () => {
-      joined = true; clearTimeout(to);
-      send(hostConn, {type:'hello', name: myName});
-      if (myReady) send(hostConn, {type:'ready', avatar: myAvatar});
-      $('roomCode').textContent = code;
-      $('lobbyHint').textContent = 'Ждём, пока создатель нажмёт СТАРТ';
-      show('lobby');
-    });
-    hostConn.on('data', handle);
-    hostConn.on('close', () => { show('lobby'); $('lobbyErr').textContent = 'Создатель комнаты отключился'; });
+  $('status').textContent = 'Подключаюсь к комнате ' + code + '…';
+  onNet = guestNet;
+  await netOpen(code, 'all', 'h', {type:'bye', mid: rid(), from: myId});
+  // зовём создателя, пока он не впишет нас в лобби
+  const ok = await new Promise(res => {
+    joinDone = () => res(true);
+    const t0j = Date.now();
+    (function knock(){ if (inRoom) return; if (Date.now() - t0j > 15000) return res(false); lastHello = 0; hello(); setTimeout(knock, 2000); })();
   });
-  peer.on('error', e => {
-    if (joined){ $('lobbyErr').textContent = 'Связь шалит: ' + e.type; return; }
-    clearTimeout(to); show('home');
-    $('homeErr').textContent = e.type === 'peer-unavailable' ? 'Комната не найдена' : 'Ошибка связи: ' + e.type;
-  });
+  joinDone = null;
+  if (!ok){
+    netClose(); room = ''; show('home');
+    $('homeErr').textContent = 'Комната ' + code + ' не отвечает. Проверь код — или создатель закрыл игру';
+    return;
+  }
+  lastHost = Date.now();
+  $('roomCode').textContent = code;
+  $('lobbyHint').textContent = 'Ждём, пока создатель нажмёт СТАРТ';
+  $('btnStart').style.display = 'none'; $('btnInvite').style.display = 'none';
+  show('lobby');
+  startVideo();
 }
 
 function guard(fn){ return async () => {
@@ -527,39 +616,59 @@ function guard(fn){ return async () => {
 const INVITE = (new URLSearchParams(location.search).get('r') || '').toUpperCase().slice(0, 4);
 try { $('name').value = localStorage.getItem('nu_name') || ''; } catch(e){}
 if (INVITE.length === 4){
-  $('btnPlay').textContent = 'ВОЙТИ В ЭФИР';
-  $('inviteHint').style.display = 'block'; $('inviteHint').textContent = 'Тебя позвали в комнату ' + INVITE;
+  $('code').value = INVITE;
+  $('btnJoin').className = 'grad'; $('btnPlay').className = 'sec';
+  $('inviteHint').style.display = 'block'; $('inviteHint').textContent = 'Тебя позвали в комнату ' + INVITE + ' — жми «Войти»';
 }
-$('btnPlay').onclick = guard(INVITE.length === 4 ? joinRoom : createRoom);
+$('btnPlay').onclick = guard(createRoom);
 $('btnInvite').onclick = async () => {
   const url = location.origin + location.pathname + '?r=' + $('roomCode').textContent;
   try { if (navigator.share){ await navigator.share({title: 'Не улыбайся', text: 'Го в эфир, кто первый улыбнётся — проиграл 😐', url}); return; } } catch(e){ return; }
   try { await navigator.clipboard.writeText(url); $('btnInvite').textContent = '✅ Ссылка скопирована'; } catch(e){ prompt('Ссылка для друзей', url); }
 };
 $('btnJoin').onclick = guard(joinRoom);
-function smallShot(){
-  const v = $('cam'), sz = 160, c = document.createElement('canvas'); c.width = c.height = sz;
+function smallShot(v){
+  const sz = 160, c = document.createElement('canvas'); c.width = c.height = sz;
   const k = Math.min(v.videoWidth, v.videoHeight), g = c.getContext('2d');
   g.translate(sz, 0); g.scale(-1, 1);
   g.drawImage(v, (v.videoWidth - k)/2, (v.videoHeight - k)/2, k, k, 0, 0, sz, sz);
   return c.toDataURL('image/jpeg', 0.7);
 }
-$('btnFace').onclick = () => {
+// калибровка по видимому превью лобби: спрятанное видео на телефонах может стоять на паузе
+async function calibrate(){
+  const v = $('pv'), out = [];
+  let end = performance.now() + 8000;   // первый прогон модели бывает долгим — считаем 2.5 с от первого кадра
+  let lt = -1;
+  v.play().catch(() => {});
+  while (performance.now() < end && out.length < 8){
+    await new Promise(r => setTimeout(r, 50));
+    if (v.readyState < 2 || v.currentTime === lt) continue;
+    lt = v.currentTime;
+    const r = landmarker.detectForVideo(v, performance.now()), bs = r.faceBlendshapes && r.faceBlendshapes[0];
+    if (!bs) continue;
+    if (!out.length) end = Math.min(end, performance.now() + 2500);
+    let l = 0, rr = 0;
+    for (const c of bs.categories){ if (c.categoryName === 'mouthSmileLeft') l = c.score; if (c.categoryName === 'mouthSmileRight') rr = c.score; }
+    out.push(Math.max(l, rr));
+  }
+  return out;
+}
+$('btnFace').onclick = async () => {
   unlockAudio();
   if (!landmarker){ $('faceHint').textContent = 'Ещё загружаю распознавание, секунду…'; return; }
-  phase = 'calib'; calib = [];
+  if (phase !== 'idle') return;
   $('btnFace').disabled = true; $('faceHint').textContent = 'Замри… 😐';
-  setTimeout(() => {
-    phase = 'idle'; $('btnFace').disabled = false;
-    if (calib.length < 4){ $('faceHint').textContent = 'Лицо не видно — посмотри прямо в камеру и нажми ещё раз'; return; }
-    const sorted = calib.slice().sort((a, b) => a - b), med = sorted[Math.floor(sorted.length/2)];
-    if (med > 0.5){ $('faceHint').textContent = 'Ты улыбаешься 😏 Сделай серьёзное лицо и нажми ещё раз'; return; }
-    baseline = Math.min(0.25, med);
-    myAvatar = smallShot(); myReady = true;
-    $('btnFace').textContent = '🔄 Переснять'; $('faceHint').textContent = 'Готово ✅ Это твоё обычное лицо';
-    if (isHost){ const p = players.get(peer.id); if (p){ p.avatar = myAvatar; p.ready = true; } broadcast({type:'lobby', players: lobbyList()}); }
-    else send(hostConn, {type:'ready', avatar: myAvatar});
-  }, 1300);
+  let calib = [];
+  try { calib = await calibrate(); } catch(e){ console.warn('calib', e); }
+  $('btnFace').disabled = false;
+  if (calib.length < 3){ $('faceHint').textContent = 'Лицо не видно — посмотри прямо в камеру и нажми ещё раз'; return; }
+  const sorted = calib.slice().sort((a, b) => a - b), med = sorted[Math.floor(sorted.length/2)];
+  if (med > 0.5){ $('faceHint').textContent = 'Ты улыбаешься 😏 Сделай серьёзное лицо и нажми ещё раз'; return; }
+  baseline = Math.min(0.25, med);
+  const v = $('pv'); myAvatar = smallShot(v.videoWidth ? v : $('cam')); myReady = true;
+  $('btnFace').textContent = '🔄 Переснять'; $('faceHint').textContent = 'Готово ✅ Это твоё обычное лицо';
+  if (isHost){ const p = players.get(myId); if (p){ p.avatar = myAvatar; p.ready = true; } sendLobby(); }
+  else toHost({type:'ready', avatar: myAvatar});
 };
 $('btnStart').onclick = () => { unlockAudio(); if (phase === 'idle' && players.size && lobbyList().every(p => p.ready)) broadcast({type:'start'}); };
 let lastLoser = null;
