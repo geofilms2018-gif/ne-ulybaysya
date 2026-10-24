@@ -76,9 +76,14 @@
   <div class="logo">😐</div>
   <h1>НЕ <span>УЛЫБАЙСЯ</span></h1>
   <p>Кто первый улыбнётся — проиграл</p>
-  <input id="name" placeholder="Твоё имя" maxlength="14" autocomplete="off">
-  <button class="grad" id="btnCreate">Создать комнату</button>
-  <div class="row"><input id="code" class="code" placeholder="КОД" maxlength="4" autocomplete="off"><button class="sec" id="btnJoin" style="max-width:130px">Войти</button></div>
+  <button class="grad" id="btnPlay" style="font-size:24px;padding:20px">ИГРАТЬ</button>
+  <p id="inviteHint" style="display:none"></p>
+  <details style="width:100%;max-width:340px;color:var(--mut)"><summary style="font-size:14px;padding:6px">имя и вход по коду</summary>
+    <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px">
+      <input id="name" placeholder="Твоё имя (необязательно)" maxlength="14" autocomplete="off">
+      <div class="row"><input id="code" class="code" placeholder="КОД" maxlength="4" autocomplete="off"><button class="sec" id="btnJoin" style="max-width:130px">Войти</button></div>
+    </div>
+  </details>
   <p id="homeErr" class="err"></p>
 </section>
 
@@ -87,6 +92,7 @@
   <p>Код комнаты</p>
   <div class="bigcode" id="roomCode">----</div>
   <p id="lobbyHint"></p>
+  <button class="sec" id="btnInvite" style="display:none">📲 Позвать друзей</button>
   <div id="players"></div>
   <button class="grad" id="btnStart" style="display:none">Начать эфир</button>
   <p id="lobbyErr" class="err"></p>
@@ -174,6 +180,14 @@ document.addEventListener('pointerdown', ev => {
   const e = REACT[Math.floor(Math.random()*REACT.length)];
   if (isHost) broadcast({type:'react', e}); else { flyEmoji(e); send(hostConn, {type:'react', e}); }
 });
+const NICKS = ['Кирпич','Покерфейс','Камень','Сфинкс','Бетон','Робот','Терминатор','Шрек','Бульдог','Монах'];
+function getName(){
+  let n = $('name').value.trim();
+  if (!n){ try { n = localStorage.getItem('nu_name') || ''; } catch(e){} }
+  if (!n) n = NICKS[Math.floor(Math.random()*NICKS.length)] + ' ' + (10 + Math.floor(Math.random()*90));
+  try { localStorage.setItem('nu_name', n); } catch(e){}
+  return n;
+}
 function show(id){ document.querySelectorAll('.scr').forEach(s => s.classList.toggle('on', s.id === id)); }
 function fmt(ms){ const s = ms/1000; return Math.floor(s/60) + ':' + (s%60).toFixed(1).padStart(4,'0'); }
 function code4(){ const a='ABCDEFGHJKLMNPRSTUVWXYZ'; return Array.from({length:4},()=>a[Math.floor(Math.random()*a.length)]).join(''); }
@@ -203,7 +217,11 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 async function initCam(){
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('Камера недоступна. Открой ссылку в Safari или Chrome, а не внутри Телеграма или Инстаграма');
   if (stream && stream.active && stream.getVideoTracks().every(t => t.readyState === 'live')){ $('cam').play().catch(()=>{}); return; }
-  stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'user', width:{ideal:640}, height:{ideal:480}}, audio:false});
+  // некоторые встроенные браузеры молча не показывают запрос камеры — не висим, а говорим, что делать
+  stream = await Promise.race([
+    navigator.mediaDevices.getUserMedia({video:{facingMode:'user', width:{ideal:640}, height:{ideal:480}}, audio:false}),
+    new Promise((_, no) => setTimeout(() => no(new Error('Камера не включилась. Нажми «Разрешить», а если запроса нет — открой ссылку в Safari или Chrome')), 15000))
+  ]);
   $('cam').srcObject = stream;
   await $('cam').play();
 }
@@ -370,12 +388,13 @@ function showLoser(m){
 function showHostLobby(){
   show('lobby');
   $('btnStart').style.display = 'block';
-  $('lobbyHint').textContent = 'Друзья вводят этот код у себя';
+  $('lobbyHint').textContent = 'Отправь друзьям ссылку — они нажмут одну кнопку';
+  $('btnInvite').style.display = 'block';
   broadcast({type:'lobby', players: lobbyList()});
 }
 
 async function createRoom(){
-  myName = ($('name').value.trim() || 'Игрок');
+  myName = getName();
   isHost = true;
   await prepareDevice();
   openHostPeer(code4());
@@ -404,8 +423,8 @@ function openHostPeer(code){
 }
 
 async function joinRoom(){
-  myName = ($('name').value.trim() || 'Игрок');
-  const code = $('code').value.trim().toUpperCase();
+  myName = getName();
+  const code = ($('code').value.trim() || INVITE).toUpperCase();
   if (code.length !== 4){ $('homeErr').textContent = 'Введи код из 4 букв'; return; }
   await prepareDevice();
   let joined = false;
@@ -438,7 +457,18 @@ function guard(fn){ return async () => {
   catch(e){ show('home'); $('homeErr').textContent = e && e.name === 'NotAllowedError' ? 'Разреши доступ к камере в настройках браузера' : 'Не получилось: ' + (e.message || e); }
 }; }
 
-$('btnCreate').onclick = guard(createRoom);
+const INVITE = (new URLSearchParams(location.search).get('r') || '').toUpperCase().slice(0, 4);
+try { $('name').value = localStorage.getItem('nu_name') || ''; } catch(e){}
+if (INVITE.length === 4){
+  $('btnPlay').textContent = 'ВОЙТИ В ЭФИР';
+  $('inviteHint').style.display = 'block'; $('inviteHint').textContent = 'Тебя позвали в комнату ' + INVITE;
+}
+$('btnPlay').onclick = guard(INVITE.length === 4 ? joinRoom : createRoom);
+$('btnInvite').onclick = async () => {
+  const url = location.origin + location.pathname + '?r=' + $('roomCode').textContent;
+  try { if (navigator.share){ await navigator.share({title: 'Не улыбайся', text: 'Го в эфир, кто первый улыбнётся — проиграл 😐', url}); return; } } catch(e){ return; }
+  try { await navigator.clipboard.writeText(url); $('btnInvite').textContent = '✅ Ссылка скопирована'; } catch(e){ prompt('Ссылка для друзей', url); }
+};
 $('btnJoin').onclick = guard(joinRoom);
 $('btnStart').onclick = () => { unlockAudio(); if (phase === 'idle' && players.size) broadcast({type:'start'}); };
 let lastLoser = null;
