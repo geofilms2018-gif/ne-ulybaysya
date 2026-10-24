@@ -159,6 +159,7 @@
 <audio id="sDun" src="../zvuki/dundun.mp3" preload="auto"></audio>
 <audio id="sRev" src="../zvuki/reveal.mp3" preload="auto"></audio>
 
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script src="https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js"></script>
 <script type="module">
@@ -777,8 +778,22 @@ function guard(fn){ return async () => {
   catch(e){ show('home'); $('homeErr').textContent = camHelp(e); }
 }; }
 
-const INVITE = (new URLSearchParams(location.search).get('r') || '').toUpperCase().slice(0, 4);
+// ---------- Telegram Mini App: без сервера и без токена бота ----------
+// Ссылка-приглашение: t.me/<TG_BOT>/<TG_APP>?startapp=КОД. Пока бот не заведён (пусто) — зовём обычной ссылкой на сайт.
+const TG_BOT = '', TG_APP = '';
+const TG = window.Telegram && Telegram.WebApp && Telegram.WebApp.initData ? Telegram.WebApp : null;
+if (TG){
+  try {
+    TG.ready(); TG.expand();
+    TG.setHeaderColor('#000000'); TG.setBackgroundColor('#000000');   // игра в стиле эфира — всегда тёмная, шапку Телеграма красим в тон
+    if (TG.disableVerticalSwipes) TG.disableVerticalSwipes();          // свайп вниз не закрывает игру посреди раунда
+  } catch(e){}
+}
+// заготовка под Stars и подарки: TG.openInvoice(ссылка_на_счёт) — счёт выставляет бот, в коде страницы токена нет
+const TG_START = TG && TG.initDataUnsafe && TG.initDataUnsafe.start_param || '';
+const INVITE = (new URLSearchParams(location.search).get('r') || TG_START || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4);
 try { $('name').value = localStorage.getItem('nu_name') || ''; } catch(e){}
+if (!$('name').value && TG && TG.initDataUnsafe && TG.initDataUnsafe.user) $('name').value = String(TG.initDataUnsafe.user.first_name || '').slice(0, 14);
 if (INVITE.length === 4){
   $('code').value = INVITE;
   $('btnJoin').className = 'grad'; $('btnPlay').className = 'sec';
@@ -786,8 +801,10 @@ if (INVITE.length === 4){
 }
 $('btnPlay').onclick = guard(createRoom);
 $('btnInvite').onclick = async () => {
-  const url = location.origin + location.pathname + '?r=' + $('roomCode').textContent;
-  try { if (navigator.share){ await navigator.share({title: 'Не улыбайся', text: 'Го в эфир, кто первый улыбнётся — проиграл 😐', url}); return; } } catch(e){ return; }
+  const code = $('roomCode').textContent, text = 'Го в эфир, кто первый улыбнётся — проиграл 😐';
+  const url = TG_BOT && TG_APP ? 'https://t.me/' + TG_BOT + '/' + TG_APP + '?startapp=' + code : location.origin + location.pathname + '?r=' + code;
+  if (TG){ TG.openTelegramLink('https://t.me/share/url?url=' + encodeURIComponent(url) + '&text=' + encodeURIComponent(text)); return; }
+  try { if (navigator.share){ await navigator.share({title: 'Не улыбайся', text, url}); return; } } catch(e){ return; }
   try { await navigator.clipboard.writeText(url); $('btnInvite').textContent = '✅ Ссылка скопирована'; } catch(e){ prompt('Ссылка для друзей', url); }
 };
 $('btnJoin').onclick = guard(joinRoom);
