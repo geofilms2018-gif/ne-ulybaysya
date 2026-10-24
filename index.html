@@ -70,6 +70,12 @@
   .ph .ring{width:76px;height:76px}
   .ph{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--mut);font-size:13px}
   .tile.live .ph{display:none}
+  .mic{position:absolute;right:8px;bottom:8px;z-index:2;display:none;width:38px;height:38px;padding:0;border-radius:50%;font-size:18px;background:#000a;border:0;color:#fff}
+  body.voice .mic{display:block}
+  .modes{display:flex;gap:8px;width:100%;max-width:340px}
+  .modes button{flex:1;padding:12px 6px;font-size:15px}
+  .modes button.on{background:var(--ig);color:#fff}
+  #btnMic{display:none;max-width:220px} body.voice #btnMic{display:block}
   .tname{position:absolute;left:10px;bottom:8px;z-index:1;font-weight:700;font-size:13px;background:#0007;padding:3px 8px;border-radius:10px}
   #prepAv{position:absolute;top:22%;left:0;right:0;display:flex;justify-content:center;gap:14px;z-index:4;pointer-events:none}
   #prepAv .pa{display:flex;flex-direction:column;align-items:center;gap:6px;opacity:0}
@@ -106,6 +112,7 @@
   <div class="row"><input id="code" class="code" placeholder="КОД" maxlength="4" autocomplete="off" autocapitalize="characters"><button class="sec" id="btnJoin" style="max-width:140px">Войти</button></div>
   <p id="inviteHint" style="display:none"></p>
   <p id="homeErr" class="err"></p>
+  <button class="sec" id="btnBrowser" style="display:none">🌐 Открыть в браузере</button>
 </section>
 
 <section class="scr" id="lobby">
@@ -114,7 +121,10 @@
   <div class="bigcode" id="roomCode">----</div>
   <p id="lobbyHint"></p>
   <button class="sec" id="btnInvite" style="display:none">📲 Позвать друзей</button>
+  <div class="modes" id="modes" style="display:none"><button class="sec on" id="mNear">🤝 Рядом</button><button class="sec" id="mFar">🌍 Дистанционно</button></div>
+  <p id="modeHint">Режим: 🤝 рядом — без голоса</p>
   <div class="pvwrap"><video id="pv" playsinline muted autoplay></video></div>
+  <button class="sec" id="btnMic">🎤 Микрофон включён</button>
   <button class="grad" id="btnFace">📸 Это моё обычное лицо</button>
   <p id="faceHint">Сделай серьёзное лицо и нажми — это будет твоя аватарка</p>
   <div id="players"></div>
@@ -123,7 +133,7 @@
 </section>
 
 <section class="scr" id="game">
-  <div id="grid"><div class="tile" data-id="me"><video id="cam" playsinline muted autoplay></video><span class="tname" id="meTile">я</span></div></div>
+  <div id="grid"><div class="tile" data-id="me"><video id="cam" playsinline muted autoplay></video><span class="tname" id="meTile">я</span><button class="mic" id="meMic">🎤</button></div></div>
   <div class="shade"></div>
   <div class="top">
     <div class="me"><div class="ring"><b id="meAv">?</b></div><span id="meName"></span></div>
@@ -260,7 +270,7 @@ document.addEventListener('visibilitychange', () => {
 });
 
 async function initCam(){
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('Камера недоступна. Открой ссылку в Safari или Chrome, а не внутри Телеграма или Инстаграма');
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw Object.assign(new Error(TG ? 'Телеграм не дал камеру. Нажми «Открыть в браузере» ниже' : 'Камера недоступна. Открой ссылку в Safari или Chrome, а не внутри Инстаграма'), {name: TG ? 'NotAllowedError' : 'Error'});
   if (stream && stream.active && stream.getVideoTracks().every(t => t.readyState === 'live')){ $('cam').play().catch(()=>{}); return; }
   // некоторые встроенные браузеры молча не показывают запрос камеры — не висим, а говорим, что делать
   stream = await Promise.race([
@@ -392,7 +402,7 @@ function pub(k, msg){
 }
 function toHost(msg){ pub('h', msg); }
 function broadcast(msg){ pub('all', msg); handle(msg); }
-function sendLobby(){ broadcast({type:'lobby', players: lobbyList(), ph: phase}); }
+function sendLobby(){ broadcast({type:'lobby', players: lobbyList(), ph: phase, voice}); }
 function lobbyList(){ return [...players.entries()].map(([id, p]) => ({id, name: p.name, avatar: p.avatar || '', ready: !!p.ready, loss: p.loss || 0, v: !!p.v})); }
 function route(k, m){
   if (!m.from || m.from === myId) return;
@@ -410,7 +420,7 @@ function promote(){
   for (const r of roster) if (r.id !== old) players.set(r.id, r.id === myId ? {name: myName, avatar: myAvatar, ready: myReady, loss: r.loss || 0, v: vidUp(), seen: Infinity} : {name: r.name, avatar: r.avatar, ready: r.ready, loss: r.loss || 0, v: r.v, seen: Date.now()});
   if (!players.has(myId)) players.set(myId, {name: myName, avatar: myAvatar, ready: myReady, loss: 0, seen: Infinity});
   if (phase === 'run'){ hostStart = t0; loserTaken = false; cands = []; }
-  $('btnStart').style.display = 'block'; $('btnInvite').style.display = 'block';
+  $('btnStart').style.display = 'block'; $('btnInvite').style.display = 'block'; $('modes').style.display = 'flex';
   $('lobbyHint').textContent = 'Создатель вышел — теперь ведёшь ты'; $('lobbyErr').textContent = '';
   if (phase === 'done'){ $('btnAgain').style.display = 'block'; $('againHint').textContent = ''; }
   sendLobby();
@@ -418,7 +428,7 @@ function promote(){
 }
 function demote(m){
   isHost = false; ep = m.ep; hostId = m.from; lastHost = Date.now();
-  $('btnStart').style.display = 'none'; $('btnAgain').style.display = 'none';
+  $('btnStart').style.display = 'none'; $('btnAgain').style.display = 'none'; $('modes').style.display = 'none';
   $('lobbyHint').textContent = 'Ждём, пока ведущий нажмёт СТАРТ';
   lastHello = 0; hello();
   guestNet(m);
@@ -488,6 +498,50 @@ window.addEventListener('pagehide', () => { if (room) pub(isHost ? 'all' : 'h', 
 function avHtml(p){ return p.avatar ? '<img src="' + p.avatar + '" alt="">' : esc(ini(p.name)); }
 function okAvatar(a){ return typeof a === 'string' && a.startsWith('data:image/jpeg') && a.length < 80000 ? a : ''; }
 
+// ---------- голос: «Рядом» — без звука, «Дистанционно» — голосовая связь ----------
+let voice = false, mic = null, micOn = true;
+function outStream(){   // что отправляем в звонки: камера + микрофон в дистанционном режиме
+  const t = stream ? stream.getVideoTracks() : [];
+  return new MediaStream(voice && mic ? [...t, ...mic.getAudioTracks()] : t);
+}
+function applyAudio(t){
+  const v = t.querySelector('video'), b = t.querySelector('.mic');
+  v.muted = !voice || !!t.dataset.mute;
+  if (!v.muted) v.play().catch(() => {});
+  b.textContent = t.dataset.mute ? '🔇' : '🔊';
+}
+function showMic(){
+  const txt = !mic ? '🚫 Нет доступа к микрофону' : micOn ? '🎤 Микрофон включён' : '🔇 Микрофон выключен';
+  $('btnMic').textContent = txt; $('meMic').textContent = !mic ? '🚫' : micOn ? '🎤' : '🔇';
+}
+function toggleMic(ev){
+  if (ev) ev.stopPropagation();
+  if (!mic){ setVoice(voice, true); return; }   // повторная попытка дать доступ
+  micOn = !micOn; for (const tr of mic.getAudioTracks()) tr.enabled = micOn; showMic();
+}
+async function setVoice(on, retry){
+  const changed = on !== voice;
+  voice = on; document.body.classList.toggle('voice', on);
+  $('modeHint').textContent = on ? 'Режим: 🌍 дистанционно — голосовая связь' : 'Режим: 🤝 рядом — без голоса';
+  $('mNear').classList.toggle('on', !on); $('mFar').classList.toggle('on', on);
+  try { if (navigator.audioSession) navigator.audioSession.type = on ? 'play-and-record' : 'playback'; } catch(e){}
+  if (on && (!mic || retry)){
+    try { mic = await navigator.mediaDevices.getUserMedia({audio: {echoCancellation: true, noiseSuppression: true, autoGainControl: true}}); for (const tr of mic.getAudioTracks()) tr.enabled = micOn; }
+    catch(e){ mic = null; }   // без микрофона играть и слушать других всё равно можно
+  }
+  if (!on && mic){ for (const tr of mic.getTracks()) tr.stop(); mic = null; }
+  showMic();
+  for (const t of document.querySelectorAll('.tile:not([data-id="me"])')) applyAudio(t);
+  // состав дорожек поменялся — перезваниваем всем, пульс соберёт сетку заново
+  if (changed || retry) redial();
+}
+function redial(){
+  for (const c of [...calls.values(), ...relays.values()]) try { c.close(); } catch(e){}
+  calls.clear(); relays.clear(); remote.clear();
+  for (const t of document.querySelectorAll('.tile:not([data-id="me"])')){ t.classList.remove('live'); t.querySelector('video').srcObject = null; }
+  syncCalls();
+}
+
 // ---------- видео всех игроков (как FaceTime) ----------
 // Сначала каждый звонит каждому напрямую. Если гость↔гость не соединились за 3 с (сотовый NAT),
 // гость просит создателя переслать ему видео этого игрока: с создателем связь есть у всех.
@@ -504,7 +558,9 @@ function ensureTile(id){
   let t = tileOf(id);
   if (!t){
     t = document.createElement('div'); t.className = 'tile'; t.dataset.id = id;
-    t.innerHTML = '<video playsinline autoplay muted></video><div class="ph"><div class="ring"><b></b></div><small>подключаю видео…</small></div><span class="tname"></span>';
+    t.innerHTML = '<video playsinline autoplay muted></video><div class="ph"><div class="ring"><b></b></div><small>подключаю видео…</small></div><span class="tname"></span><button class="mic">🔊</button>';
+    const b = t.querySelector('.mic'), v = t.querySelector('video');
+    b.onclick = ev => { ev.stopPropagation(); t.dataset.mute = t.dataset.mute ? '' : '1'; applyAudio(t); };
     $('grid').appendChild(t);
   }
   const p = roster.find(r => r.id === id);
@@ -515,7 +571,7 @@ function ensureTile(id){
 }
 function setTileStream(id, st){
   const t = ensureTile(id), v = t.querySelector('video');
-  if (v.srcObject !== st){ v.srcObject = st; v.play().catch(() => {}); }
+  if (v.srcObject !== st){ v.srcObject = st; applyAudio(t); v.play().catch(() => {}); }
   t.classList.add('live'); layoutGrid();
 }
 function clearTile(id, st){
@@ -562,7 +618,7 @@ function onIncomingCall(c){
   }
   const id = c.peer.slice(PREFIX.length), old = calls.get(id);
   calls.delete(id); if (old) try { old.close(); } catch(e){}
-  c.answer(stream); wireCall(c, id);
+  c.answer(outStream()); wireCall(c, id);
 }
 // создатель: гость g не видит игрока of — шлём ему видео of со своего телефона
 function hostRelay(g, of){
@@ -605,7 +661,7 @@ function syncCalls(){
   for (const r of roster){
     if (r.id === myId || !r.v || calls.has(r.id) || myId > r.id) continue;
     if (NOMESH && !isHost && r.id !== hostId) continue;
-    wireCall(peer.call(PREFIX + r.id, stream), r.id);
+    wireCall(peer.call(PREFIX + r.id, outStream()), r.id);
   }
   if (!isHost) for (const r of roster){
     if (r.id === myId || r.id === hostId || !since.has(r.id) || remote.has(r.id) || relays.has(r.id)) continue;
@@ -656,6 +712,7 @@ function handle(msg){
     $('btnStart').textContent = all ? 'Начать эфир' : 'Ждём, пока все сфоткаются (' + ready + '/' + roster.length + ')';
     syncCalls();
     hostPh = msg.ph;
+    if (!isHost && !!msg.voice !== voice) setVoice(!!msg.voice);
     if (!isHost && $('lobby').classList.contains('on')) spectate();
   }
   if (msg.type === 'start' && phase === 'idle') startRound();
@@ -718,7 +775,7 @@ function showLoser(m){
 
 function showHostLobby(){
   show('lobby');
-  $('btnStart').style.display = 'block';
+  $('btnStart').style.display = 'block'; $('modes').style.display = 'flex';
   $('lobbyHint').textContent = 'Отправь друзьям ссылку — они нажмут одну кнопку';
   $('btnInvite').style.display = 'block';
   sendLobby();
@@ -771,7 +828,7 @@ async function joinRoom(){
 function camHelp(e){
   const n = e && e.name, ua = navigator.userAgent;
   if (n === 'NotAllowedError' || n === 'SecurityError'){
-    if (window.Telegram && Telegram.WebApp && Telegram.WebApp.initData || /Telegram/i.test(ua)) return 'Телеграм не дал камеру. Нажми ⋯ → «Открыть в браузере» и разреши камеру там';
+    if (window.Telegram && Telegram.WebApp && Telegram.WebApp.initData || /Telegram/i.test(ua)) return 'Телеграм не дал камеру. Нажми «Открыть в браузере» ниже и разреши камеру там';
     if (IOS) return 'Камера запрещена. Нажми «аА» слева в адресной строке → Настройки веб‑сайта → Камера → Разрешить, и обнови страницу';
     return 'Камера запрещена. Нажми 🔒 слева от адреса → Разрешения → Камера → Разрешить, и обнови страницу';
   }
@@ -782,7 +839,7 @@ function camHelp(e){
 function guard(fn){ return async () => {
   $('homeErr').textContent = '';
   try { await fn(); }
-  catch(e){ show('home'); $('homeErr').textContent = camHelp(e); }
+  catch(e){ show('home'); $('homeErr').textContent = camHelp(e); $('btnBrowser').style.display = TG ? 'block' : 'none'; }
 }; }
 
 // ---------- Telegram Mini App: без сервера и без токена бота ----------
@@ -815,6 +872,15 @@ $('btnInvite').onclick = async () => {
   try { await navigator.clipboard.writeText(url); $('btnInvite').textContent = '✅ Ссылка скопирована'; } catch(e){ prompt('Ссылка для друзей', url); }
 };
 $('btnJoin').onclick = guard(joinRoom);
+$('mNear').onclick = () => { unlockAudio(); if (voice){ setVoice(false); sendLobby(); } };
+$('mFar').onclick = () => { unlockAudio(); if (!voice){ setVoice(true); sendLobby(); } };
+$('btnMic').onclick = toggleMic; $('meMic').onclick = toggleMic;
+// Телеграм не дал камеру — открываем ту же комнату в обычном браузере
+$('btnBrowser').onclick = () => {
+  const code = ($('code').value.trim() || INVITE).toUpperCase();
+  const url = location.origin + location.pathname + (/^[A-Z]{4}$/.test(code) ? '?r=' + code : '');
+  if (TG) TG.openLink(url); else location.href = url;
+};
 function smallShot(v){
   const sz = 160, c = document.createElement('canvas'); c.width = c.height = sz;
   const k = Math.min(v.videoWidth, v.videoHeight), g = c.getContext('2d');
