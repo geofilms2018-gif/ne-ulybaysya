@@ -410,11 +410,13 @@ function loop(){
   $('status').textContent = 'Держись…';
   const thr = Math.max(SMILE_MIN, baseline + SMILE_OVER);
   sBuf.push(s); if (sBuf.length > 3) sBuf.shift();
-  const med = sBuf.slice().sort((a, b) => a - b)[sBuf.length >> 1];   // медиана 3 кадров — одиночный выброс не в счёт
+  // сглаживание от одиночных выбросов: при ≥10 кадров/с — медиана 3 кадров, на слабом телефоне (5–8 кадров/с) — худший из двух
+  const sorted = sBuf.slice().sort((a, b) => a - b), med = detFps >= 10 ? sorted[sorted.length >> 1] : Math.min(...sBuf.slice(-2));
   if (med > thr && corners >= SMILE_BOTH){
     if (!smileFrames++) smileSince = now;
-    // длительность = от первого кадра с улыбкой до текущего + длина кадра
-    if (!sentSmile && smileFrames >= 2 && now - smileSince + Math.min(100, 1000 / (detFps || 12)) >= SMILE_HOLD_MS){ sentSmile = true; reportSmile(snapshot(), 'первым(-ой) улыбнулся(-ась)'); }
+    // длительность = от первого кадра с улыбкой до текущего + длина кадра; на слабом телефоне хватает одного кадра (он и так ≥0,15 с)
+    const frameMs = Math.min(200, 1000 / (detFps || 12)), need = frameMs >= SMILE_HOLD_MS ? 1 : 2;
+    if (!sentSmile && smileFrames >= need && now - smileSince + frameMs >= SMILE_HOLD_MS){ sentSmile = true; reportSmile(snapshot(), 'первым(-ой) улыбнулся(-ась)'); }
   } else {
     smileFrames = 0;
     if (now - lastShotAt > 500){ lastShotAt = now; lastFaceShot = snapshot(); }
