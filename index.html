@@ -424,27 +424,47 @@ function loop(){
 }
 
 // ---------- сеть ----------
-// Игровые сообщения идут через два публичных MQTT-брокера (WSS): им не мешает NAT сотовой сети.
-// Каждое сообщение уходит в оба, дубли отбрасываются по mid. WebRTC — только для видео.
+// Игровые сообщения, кадры и голос идут через наш сервер (WebSocket, wss): ему не мешает NAT сотовой сети.
+// Запасной путь — два публичных MQTT-брокера; дубли отбрасываются по mid. Видео — WebRTC (TURN с нашего сервера).
+const SRV_HOST = '85-214-12-254.sslip.io', SRV = 'https://' + SRV_HOST;
+const NOSRV = new URLSearchParams(location.search).has('nosrv');   // тест: как будто сервера нет (работает запасной путь)
+let sws = null, swsWant = false, swsWill = null;
+const srvUp = () => !!sws && sws.readyState === 1;
+function srvConnect(){
+  if (NOSRV || !swsWant || !room) return;
+  const ws = sws = new WebSocket('wss://' + SRV_HOST + '/ws?room=' + room + '&id=' + myId);
+  ws.onopen = () => { if (swsWill) ws.send(JSON.stringify({type:'_will', k: swsWill.k, m: swsWill.m})); if (swsUp) swsUp(); };
+  ws.onmessage = ev => {
+    let m; try { m = JSON.parse(ev.data); } catch(e){ return; }
+    if (!m || !m.from) return;
+    if (m.mid){ if (seen.has(m.mid)) return; seen.add(m.mid); seenQ.push(m.mid); if (seenQ.length > 1000) seen.delete(seenQ.shift()); }
+    route(m.k || 'all', m);
+  };
+  ws.onclose = () => { if (sws === ws){ sws = null; if (swsWant) setTimeout(srvConnect, 2000); } };
+  ws.onerror = () => {};
+}
+let swsUp = null;
+function srvSend(data){ if (srvUp() && sws.bufferedAmount < 300000){ sws.send(data); return true; } return false; }
 const BROKERS = ['wss://broker.emqx.io:8084/mqtt', 'wss://broker.hivemq.com:8884/mqtt'];
 const rid = () => Math.random().toString(36).slice(2, 12);
 const myId = rid();
 let room = '', clients = [], onNet = null, inRoom = false, lastHost = 0, lastHello = 0, ep = 0;   // ep — номер ведущего: растёт при смене
 const seen = new Set(), seenQ = [];
 function topic(k){ return 'ne-ulybaysya/v2/' + room + '/' + k; }   // h — создателю, all — всем
-function netClose(){ for (const c of clients) try { c.end(true); } catch(e){} clients = []; }
+function netClose(){ swsWant = false; if (sws) try { sws.close(); } catch(e){} sws = null; for (const c of clients) try { c.end(true); } catch(e){} clients = []; }
 function netOpen(code, willKey, will){
   netClose(); room = code;
   return new Promise((resolve, reject) => {
     let up = false;
     const to = setTimeout(() => { if (!up) reject(new Error('Нет связи с сервером игры. Проверь интернет')); }, 12000);
+    const ready = () => { if (!up){ up = true; clearTimeout(to); resolve(); } };
+    swsUp = ready; swsWant = true; swsWill = {k: willKey, m: will}; srvConnect();
     for (const url of BROKERS){
       const c = mqtt.connect(url, {clientId: 'nu_' + myId + '_' + rid().slice(0, 4), keepalive: 20, reconnectPeriod: 2000, connectTimeout: 8000,
         will: {topic: topic(willKey), payload: JSON.stringify(will), qos: 1}});
-      c.on('connect', () => c.subscribe({[topic('h')]: {qos: 1}, [topic('all')]: {qos: 1}, [topic('x')]: {qos: 0}, [RELAY_T]: {qos: 1}}, err => { if (!err && !up){ up = true; clearTimeout(to); resolve(); } }));
+      c.on('connect', () => c.subscribe({[topic('h')]: {qos: 1}, [topic('all')]: {qos: 1}, [topic('x')]: {qos: 0}}, err => { if (!err) ready(); }));
       c.on('message', (t, buf) => {
         let m; try { m = JSON.parse(buf.toString()); } catch(e){ return; }
-        if (t === RELAY_T){ relayAnnounce(m); return; }
         if (!m || !m.mid || seen.has(m.mid)) return;
         seen.add(m.mid); seenQ.push(m.mid); if (seenQ.length > 1000) seen.delete(seenQ.shift());
         route(t.endsWith('/h') ? 'h' : t.endsWith('/x') ? 'x' : 'all', m);
@@ -455,9 +475,11 @@ function netOpen(code, willKey, will){
   });
 }
 function pub(k, msg, qos){
-  msg.mid = rid(); msg.from = myId; if (isHost) msg.ep = ep;
+  msg.mid = rid(); msg.from = myId; msg.k = k; if (isHost) msg.ep = ep;
   seen.add(msg.mid);   // своё эхо не обрабатываем
   const data = JSON.stringify(msg);
+  const viaSrv = srvSend(data);
+  if (k === 'x' && viaSrv) return;   // кадры и голос идут только через сервер
   for (const c of clients) try { c.publish(topic(k), data, {qos: qos === 0 ? 0 : 1}); } catch(e){}
 }
 function toHost(msg){ pub('h', msg); }
@@ -703,14 +725,14 @@ function frameNet(m){
 }
 function fallbackTick(){
   if (!room || !stream) return;
-  const now = Date.now(), viaRelay = rws && rws.readyState === 1;
-  // кому-то нужны мои кадры: через ретранслятор 320 px ~10 в секунду, иначе через MQTT 160 px ~4 в секунду
-  if (now - needMe < 7000 && now - lastFb >= (viaRelay ? RL_MS : FB_MS) && !(viaRelay && rws.bufferedAmount > 200000)){
+  const now = Date.now(), viaRelay = srvUp();
+  // кому-то нужны мои кадры: через сервер 320 px ~10 в секунду, иначе через MQTT 160 px ~4 в секунду
+  if (now - needMe < 7000 && now - lastFb >= (viaRelay ? RL_MS : FB_MS)){
     const v = maskId && outCv ? outCv : $('cam'), w = viaRelay ? 320 : 160, vw = v.videoWidth || v.width, vh = v.videoHeight || v.height;
     if (vw){
       lastFb = now; fbCv.width = w; fbCv.height = Math.round(w * vh / vw); fbG.drawImage(v, 0, 0, fbCv.width, fbCv.height);
       const d = fbCv.toDataURL('image/jpeg', viaRelay ? 0.6 : 0.55);
-      if (viaRelay) rws.send(JSON.stringify({type:'fr', d})); else pub('x', {type:'fr', d}, 0);
+      pub('x', {type:'fr', d}, 0);
     }
   }
   // у кого-то нет видео дольше 4 с — просим кадры
@@ -749,11 +771,11 @@ function pcmSend(){
   pcmMic = mic; pcmSrc = d ? actx.createMediaStreamSource(d.dest.stream) : actx.createMediaStreamSource(mic); pcmNode = actx.createScriptProcessor(4096, 1, 1);
   const mute = actx.createGain(); mute.gain.value = 0;
   pcmNode.onaudioprocess = ev => {
-    if (!micOn || !rws || rws.readyState !== 1 || Date.now() - needAMe > 7000 || rws.bufferedAmount > 200000) return;
+    if (!micOn || !srvUp() || Date.now() - needAMe > 7000) return;
     const inp = ev.inputBuffer.getChannelData(0), k = actx.sampleRate / PCM_RATE, n = Math.floor(inp.length / k), out = new Int16Array(n);
     for (let i = 0; i < n; i++){ const x = inp[Math.floor(i * k)]; out[i] = Math.max(-1, Math.min(1, x)) * 32767; }
     let bin = ''; const u8 = new Uint8Array(out.buffer); for (let i = 0; i < u8.length; i++) bin += String.fromCharCode(u8[i]);
-    rws.send(JSON.stringify({type:'pcm', d: btoa(bin)}));
+    pub('x', {type:'pcm', d: btoa(bin)}, 0);
   };
   pcmSrc.connect(pcmNode); pcmNode.connect(mute); mute.connect(actx.destination);
 }
@@ -774,38 +796,10 @@ function playPcm(id, d){
 }
 setInterval(fallbackTick, RL_MS);
 
-// ---------- ретранслятор на Маке (cloudflared): адрес приходит в MQTT с подписью, чужой адрес не примем ----------
-const RELAY_T = 'ne-ulybaysya/v2/relay';
-const RELAY_PUB = 'BKTVMUBck3+IEF6vEBVy7G+n4u+cWRLr8ZqwWOp53QzzsUgiyc1isSwdSN9mQ4DI8mGdWppTITWB89lkhWKf1AQ=';
-const NORELAY = new URLSearchParams(location.search).has('norelay');   // тест: как будто ретранслятора нет
-let relayUrl = '', rws = null, rwsRoom = '', relayKey = null;
-const b64 = x => Uint8Array.from(atob(x), c => c.charCodeAt(0));
-async function relayAnnounce(m){
-  try {
-    if (NORELAY || !m || typeof m.url !== 'string' || !/^wss:\/\/[a-z0-9-]+\.trycloudflare\.com$/.test(m.url)) return;
-    const age = Date.now() / 1000 - m.t; if (!(age < 86400 && age > -600)) return;
-    relayKey = relayKey || await crypto.subtle.importKey('raw', b64(RELAY_PUB), {name: 'ECDSA', namedCurve: 'P-256'}, false, ['verify']);
-    const ok = await crypto.subtle.verify({name: 'ECDSA', hash: 'SHA-256'}, relayKey, b64(m.sig), new TextEncoder().encode(m.url + '|' + m.t));
-    if (!ok || m.url === relayUrl) return;
-    relayUrl = m.url; relayConnect();
-  } catch(e){}
-}
-function relayConnect(){
-  if (!relayUrl || !room) return;
-  if (rws && rwsRoom === room && rws.readyState <= 1 && rws.url.startsWith(relayUrl)) return;
-  try { if (rws) rws.close(); } catch(e){}
-  rwsRoom = room;
-  const ws = rws = new WebSocket(relayUrl + '/?room=' + room + '&id=' + myId);
-  ws.onmessage = ev => { let m; try { m = JSON.parse(ev.data); } catch(e){ return; } if (m && m.from && m.from !== myId) frameNet(m); };
-  ws.onclose = () => { if (rws === ws){ rws = null; setTimeout(relayConnect, 3000); } };
-  ws.onerror = () => {};
-}
-setInterval(() => { if (room && relayUrl && (!rws || rwsRoom !== room)) relayConnect(); }, 2000);
-
 // ---------- видео всех игроков (как FaceTime) ----------
 // Сначала каждый звонит каждому напрямую. Если гость↔гость не соединились за 3 с (сотовый NAT),
 // гость просит создателя переслать ему видео этого игрока: с создателем связь есть у всех.
-window.__nu = {dbg, duck: reset => { const r = {minDb: +duckMin.toFixed(1), gainDb: +duckDb.toFixed(1), myDb: +myDb.toFixed(1), remDb: +remDb.toFixed(1), active: !!duck}; if (reset) duckMin = 0; return r; }, smileOf, thr: base => Math.max(SMILE_MIN, base + SMILE_OVER), aud: () => roster.filter(r => r.id !== myId).map(r => audioFlowing(r.id) ? 'rtc' : Date.now() - (pcmLast.get(r.id) || 0) < 3000 ? 'pcm' : 0), get relay(){ return !!(rws && rws.readyState === 1); }, get fps(){ return detFps; }, out: () => outCv ? outCv.toDataURL('image/png') : '', mask: id => setMask(id)};   // для тестов
+window.__nu = {dbg, duck: reset => { const r = {minDb: +duckMin.toFixed(1), gainDb: +duckDb.toFixed(1), myDb: +myDb.toFixed(1), remDb: +remDb.toFixed(1), active: !!duck}; if (reset) duckMin = 0; return r; }, smileOf, thr: base => Math.max(SMILE_MIN, base + SMILE_OVER), aud: () => roster.filter(r => r.id !== myId).map(r => audioFlowing(r.id) ? 'rtc' : Date.now() - (pcmLast.get(r.id) || 0) < 3000 ? 'pcm' : 0), get srv(){ return srvUp(); }, get fps(){ return detFps; }, out: () => outCv ? outCv.toDataURL('image/png') : '', mask: id => setMask(id)};   // для тестов
 const NOMESH = new URLSearchParams(location.search).has('nomesh');   // для теста запасного пути
 const remote = new Map();    // id -> MediaStream, пришедший напрямую
 const relays = new Map();    // гость: id -> звонок-пересылка; создатель: 'гость|id' -> звонок
@@ -893,9 +887,32 @@ function hostRelay(g, of){
   c.on('close', end); c.on('error', end);
   setTimeout(() => { if (relays.get(k) === c && !c.open){ relays.delete(k); try { c.close(); } catch(e){} } }, 8000);
 }
-function startVideo(){
+// ICE-серверы (STUN + TURN по TCP/TLS) выдаёт наш сервер на час; обновляем раз в 50 мин
+let iceList = null, iceAt = 0, starting = false, peerFallback = false;
+const FORCERELAY = new URLSearchParams(location.search).has('forcerelay');   // тест: только через TURN
+async function loadIce(){
+  if (NOSRV) return null;
+  if (iceList && Date.now() - iceAt < 50 * 60e3) return iceList;
+  try {
+    const ctrl = new AbortController(), t = setTimeout(() => ctrl.abort(), 4000);
+    const r = await fetch(SRV + '/turn', {signal: ctrl.signal}); clearTimeout(t);
+    const j = await r.json(); if (j && Array.isArray(j.iceServers) && j.iceServers.length){ iceList = j.iceServers; iceAt = Date.now(); }
+  } catch(e){}
+  return iceList;
+}
+setInterval(async () => { if (!peer || peer.destroyed || !iceList) return; iceAt = 0; const l = await loadIce(); if (l && peer.options && peer.options.config) peer.options.config.iceServers = l; }, 50 * 60e3);
+async function startVideo(){
+  if ((peer && !peer.destroyed) || starting) return;
+  starting = true;
+  let opts = {};
+  if (NORTC) opts = {config: {iceServers: [], iceTransportPolicy: 'relay'}};   // тест «WebRTC мёртв»
+  else if (!peerFallback){
+    const ice = await loadIce();
+    if (ice) opts = {host: SRV_HOST, port: 443, path: '/', secure: true, key: 'peerjs', config: {iceServers: ice, iceTransportPolicy: FORCERELAY ? 'relay' : 'all'}};
+  }
+  starting = false;
   if (peer && !peer.destroyed) return;
-  peer = new Peer(PREFIX + myId, NORTC ? {config: {iceServers: [], iceTransportPolicy: 'relay'}} : {});
+  peer = new Peer(PREFIX + myId, opts);
   peer.on('open', () => {   // видео готово — говорим всем, чтобы звонили сразу, а не в пустоту
     if (isHost){ const p = players.get(myId); if (p){ p.v = true; sendLobby(); } }
     else toHost({type:'vid'});
@@ -904,6 +921,10 @@ function startVideo(){
   peer.on('call', onIncomingCall);
   peer.on('disconnected', () => { if (!peer.destroyed) peer.reconnect(); });
   peer.on('error', e => {   // без видео играть всё равно можно
+    // наш сигнальный сервер недоступен — пробуем публичный PeerJS
+    if (!peer.open && !peerFallback && !NORTC && ['server-error', 'socket-error', 'socket-closed', 'network'].includes(e.type)){
+      peerFallback = true; try { peer.destroy(); } catch(_){} peer = null; startVideo(); return;
+    }
     // собеседник ещё не зарегистрировался — бросаем звонок, следующий пульс (3 с) позвонит снова
     if (e.type !== 'peer-unavailable') return;
     for (const [id, c] of calls) if (String(e.message).includes(PREFIX + id)){ calls.delete(id); try { c.close(); } catch(_){} }
