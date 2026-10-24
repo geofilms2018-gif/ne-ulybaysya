@@ -1,0 +1,579 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#111">
+<title>Не улыбайся</title>
+<style>
+  :root{--bg:#000;--fg:#fff;--mut:#a8a8a8;--live:#ff0050;--ig:linear-gradient(45deg,#feda75 0%,#fa7e1e 25%,#d62976 50%,#962fbf 75%,#4f5bd5 100%)}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",system-ui,sans-serif;overflow:hidden}
+  .scr{position:fixed;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;padding:24px 16px calc(24px + env(safe-area-inset-bottom));gap:14px;text-align:center}
+  .scr.on{display:flex}
+  #home{background:radial-gradient(120% 80% at 50% 0%,#2a0a3a 0%,#000 60%)}
+  .logo{width:96px;height:96px;border-radius:28px;background:var(--ig);display:flex;align-items:center;justify-content:center;font-size:54px;box-shadow:0 10px 40px #d6297666}
+  h1{font-size:34px;margin:6px 0 0;font-weight:800;letter-spacing:-.5px}
+  h1 span{background:var(--ig);-webkit-background-clip:text;background-clip:text;color:transparent}
+  p{margin:0;color:var(--mut);font-size:15px}
+  input{width:100%;max-width:340px;font-size:18px;padding:14px 16px;border-radius:12px;border:1px solid #363636;background:#121212;color:var(--fg);text-align:center;outline:none}
+  input:focus{border-color:#a8a8a8}
+  input.code{text-transform:uppercase;letter-spacing:8px;font-weight:800}
+  button{width:100%;max-width:340px;font-size:17px;font-weight:700;padding:15px;border-radius:12px;border:0;background:#0095f6;color:#fff}
+  button.grad{background:var(--ig);box-shadow:0 8px 30px #d6297655}
+  button.sec{background:#262626;color:var(--fg)}
+  button:active{transform:scale(.97)}
+  .row{display:flex;gap:10px;width:100%;max-width:340px}
+  .livepill{display:inline-flex;align-items:center;gap:6px;background:var(--live);color:#fff;font-weight:800;font-size:13px;padding:4px 8px;border-radius:6px;letter-spacing:.5px}
+  .bigcode{font-size:52px;font-weight:900;letter-spacing:10px;background:var(--ig);-webkit-background-clip:text;background-clip:text;color:transparent}
+  #players{display:flex;flex-wrap:wrap;justify-content:center;gap:16px;max-width:360px;margin-top:6px}
+  .av{display:flex;flex-direction:column;align-items:center;gap:6px;font-size:13px;width:72px}
+  .ring{width:68px;height:68px;border-radius:50%;padding:3px;background:var(--ig);animation:pop .4s}
+  .ring b{display:flex;width:100%;height:100%;border-radius:50%;background:#262626;border:3px solid #000;align-items:center;justify-content:center;font-size:26px;font-weight:800}
+  .av span{max-width:72px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  @keyframes pop{from{transform:scale(.3);opacity:0}to{transform:scale(1);opacity:1}}
+  #game{padding:0;justify-content:flex-start}
+  video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
+  .shade{position:absolute;inset:0;background:linear-gradient(#0009 0,#0000 22%,#0000 60%,#000b 100%);z-index:1;pointer-events:none}
+  .top{position:absolute;left:12px;right:12px;top:calc(12px + env(safe-area-inset-top));display:flex;align-items:center;gap:8px;z-index:2}
+  .me{display:flex;align-items:center;gap:8px;font-weight:700;font-size:14px}
+  .me .ring{width:34px;height:34px;padding:2px;animation:none}
+  .me .ring b{font-size:14px;border-width:2px}
+  .viewers{display:inline-flex;align-items:center;gap:5px;background:#0006;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);font-weight:700;font-size:13px;padding:4px 8px;border-radius:6px}
+  .sp{flex:1}
+  .hud{position:absolute;left:0;right:0;top:calc(64px + env(safe-area-inset-top));display:flex;flex-direction:column;align-items:center;gap:8px;z-index:2}
+  #clock{font-size:60px;font-weight:900;font-variant-numeric:tabular-nums;text-shadow:0 2px 12px #000a}
+  #status{font-size:15px;font-weight:700;background:#0006;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);padding:6px 12px;border-radius:20px}
+  .meter{width:55%;height:6px;border-radius:3px;background:#fff3;overflow:hidden}
+  .meter i{display:block;height:100%;width:0;background:var(--ig);transition:width .08s}
+  #feed{position:absolute;left:12px;right:80px;bottom:calc(20px + env(safe-area-inset-bottom));z-index:2;display:flex;flex-direction:column;gap:8px;align-items:flex-start;-webkit-mask-image:linear-gradient(transparent,#000 30%);mask-image:linear-gradient(transparent,#000 30%);max-height:40vh;overflow:hidden;justify-content:flex-end}
+  .cm{display:flex;gap:8px;align-items:center;font-size:14px;text-align:left;animation:up .3s}
+  .cm .ring{width:28px;height:28px;padding:2px;flex:none;animation:none}
+  .cm .ring b{font-size:12px;border-width:2px}
+  .cm em{font-style:normal;font-weight:700;margin-right:6px}
+  @keyframes up{from{transform:translateY(12px);opacity:0}to{transform:none;opacity:1}}
+  #hearts{position:absolute;right:14px;bottom:calc(20px + env(safe-area-inset-bottom));width:60px;height:60vh;z-index:2;pointer-events:none}
+  .ht{position:absolute;bottom:0;left:16px;font-size:30px;animation:fly 2.6s ease-out forwards}
+  @keyframes fly{0%{transform:translate(0,0) scale(.4);opacity:0}10%{opacity:1}100%{transform:translate(var(--dx),-55vh) scale(1.2);opacity:0}}
+  .pvwrap{position:relative;width:150px;height:190px;border-radius:22px;overflow:hidden;padding:3px;background:var(--ig);flex:none}
+  .pvwrap video{border-radius:19px;inset:3px;width:calc(100% - 6px);height:calc(100% - 6px)}
+  #lobby{gap:10px}
+  #lobby .bigcode{font-size:40px}
+  .ring b img{width:100%;height:100%;border-radius:50%;object-fit:cover}
+  .av.ok .ring{box-shadow:0 0 0 2px #2ecc71}
+  .av small{color:var(--mut);font-size:11px}
+  #grid{position:absolute;inset:0;display:grid;gap:2px;background:#000;grid-template-columns:1fr;grid-auto-rows:1fr}
+  #grid.n4,#grid.n5,#grid.n6{grid-template-columns:1fr 1fr}
+  .tile{position:relative;overflow:hidden;background:#111}
+  .tname{position:absolute;left:10px;bottom:8px;z-index:1;font-weight:700;font-size:13px;background:#0007;padding:3px 8px;border-radius:10px}
+  #prepAv{position:absolute;top:22%;left:0;right:0;display:flex;justify-content:center;gap:14px;z-index:4;pointer-events:none}
+  #prepAv .ring{width:76px;height:76px;opacity:0}
+  #prepAv.in .ring{animation:flyin .6s cubic-bezier(.2,1.6,.4,1) forwards, bob 1s .6s ease-in-out infinite}
+  #prepAv.out .ring{animation:flyout .7s cubic-bezier(.6,-.4,.8,.6) forwards}
+  @keyframes flyin{from{transform:translateY(60vh) scale(.2) rotate(-30deg);opacity:0}to{transform:none;opacity:1}}
+  @keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+  @keyframes flyout{from{transform:none;opacity:1}to{transform:translateY(-50vh) scale(2.2) rotate(25deg);opacity:0}}
+  #prep{position:absolute;inset:0;display:none;align-items:center;justify-content:center;font-size:170px;font-weight:900;z-index:3;text-shadow:0 4px 30px #000}
+  #prep.go{background:var(--ig);-webkit-background-clip:text;background-clip:text;color:transparent;text-shadow:none}
+  #res{background:radial-gradient(120% 80% at 50% 30%,#3a0a1f 0%,#000 65%)}
+  #cd{font-size:210px;font-weight:900;background:var(--ig);-webkit-background-clip:text;background-clip:text;color:transparent}
+  #reveal{display:none;flex-direction:column;align-items:center;gap:12px}
+  .phring{padding:5px;border-radius:28px;background:var(--ig);transform:rotate(-3deg);animation:pop .5s;box-shadow:0 20px 60px #d6297666}
+  .phring img{display:block;width:74vw;max-width:340px;border-radius:24px;border:4px solid #000}
+  #loserName{font-size:40px;font-weight:900;text-transform:uppercase;letter-spacing:-.5px}
+  .tag{font-size:16px;font-weight:700;color:var(--mut)}
+  .err{color:#ed4956}
+  .shake{animation:sh .35s infinite}
+  @keyframes sh{0%,100%{transform:translate(0)}25%{transform:translate(-5px,2px) rotate(-1deg)}75%{transform:translate(5px,-2px) rotate(1deg)}}
+</style>
+</head>
+<body>
+
+<section class="scr on" id="home">
+  <div class="logo">😐</div>
+  <h1>НЕ <span>УЛЫБАЙСЯ</span></h1>
+  <p>Кто первый улыбнётся — проиграл</p>
+  <button class="grad" id="btnPlay" style="font-size:24px;padding:20px">ИГРАТЬ</button>
+  <p id="inviteHint" style="display:none"></p>
+  <details style="width:100%;max-width:340px;color:var(--mut)"><summary style="font-size:14px;padding:6px">имя и вход по коду</summary>
+    <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px">
+      <input id="name" placeholder="Твоё имя (необязательно)" maxlength="14" autocomplete="off">
+      <div class="row"><input id="code" class="code" placeholder="КОД" maxlength="4" autocomplete="off"><button class="sec" id="btnJoin" style="max-width:130px">Войти</button></div>
+    </div>
+  </details>
+  <p id="homeErr" class="err"></p>
+</section>
+
+<section class="scr" id="lobby">
+  <span class="livepill">● LIVE скоро</span>
+  <p>Код комнаты</p>
+  <div class="bigcode" id="roomCode">----</div>
+  <p id="lobbyHint"></p>
+  <button class="sec" id="btnInvite" style="display:none">📲 Позвать друзей</button>
+  <div class="pvwrap"><video id="pv" playsinline muted autoplay></video></div>
+  <button class="grad" id="btnFace">📸 Это моё обычное лицо</button>
+  <p id="faceHint">Сделай серьёзное лицо и нажми — это будет твоя аватарка</p>
+  <div id="players"></div>
+  <button class="grad" id="btnStart" style="display:none">Начать эфир</button>
+  <p id="lobbyErr" class="err"></p>
+</section>
+
+<section class="scr" id="game">
+  <div id="grid"><div class="tile" data-id="me"><video id="cam" playsinline muted autoplay></video><span class="tname" id="meTile">я</span></div></div>
+  <div class="shade"></div>
+  <div class="top">
+    <div class="me"><div class="ring"><b id="meAv">?</b></div><span id="meName"></span></div>
+    <span class="sp"></span>
+    <span class="livepill" id="livePill" style="visibility:hidden">LIVE</span>
+    <span class="viewers">👁 <span id="viewers">1</span></span>
+  </div>
+  <div class="hud">
+    <div id="clock">0:00.0</div>
+    <div id="status">Загружаю распознавание…</div>
+    <div class="meter"><i id="meter"></i></div>
+  </div>
+  <div id="feed"></div>
+  <div id="hearts"></div>
+  <div id="prepAv"></div>
+  <div id="prep"></div>
+</section>
+
+<section class="scr" id="res">
+  <div id="cd">5</div>
+  <div id="reveal">
+    <div class="tag" id="loserWhy"></div>
+    <div id="loserName"></div>
+    <div class="phring"><img id="loserImg" alt=""></div>
+    <div class="tag" id="loserTime"></div>
+    <button class="sec" id="btnShare" style="display:none">Поделиться фоткой</button>
+    <button class="grad" id="btnAgain" style="display:none">Ещё раз</button>
+    <p id="againHint"></p>
+  </div>
+</section>
+
+<audio id="sDun" src="../zvuki/dundun.mp3" preload="auto"></audio>
+<audio id="sRev" src="../zvuki/reveal.mp3" preload="auto"></audio>
+
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script type="module">
+import {FaceLandmarker, FilesetResolver} from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
+
+const $ = id => document.getElementById(id);
+const PREFIX = 'ne-ulybaysya-v1-';
+const SMILE_MIN = 0.45;      // минимальный порог улыбки
+const SMILE_OVER = 0.25;     // насколько выше спокойного лица
+const SMILE_HOLD_MS = 400;   // улыбка держится столько, чтобы засчитать
+const NOFACE_WARN_MS = 1000, NOFACE_LOSE_MS = 2500; // спрятал лицо = проиграл
+const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+let isHost = false, peer = null, hostConn = null, myName = '';
+const players = new Map();   // хост: peerId -> {name, conn}
+let landmarker = null, stream = null;
+let phase = 'idle';          // idle | prep | run | done
+let t0 = 0, baseline = 0, calib = [], smileSince = 0, sentSmile = false, calibOn = false;
+let myAvatar = '', myReady = false, roster = [], calls = new Map();
+let lastFaceShot = '', lastShotAt = 0, ema = null, noFaceSince = 0, lastVideoTime = -1, lastScore = null, modelReady = null, wakeLock = null;
+
+function ini(n){ return (n||'?').trim().charAt(0).toUpperCase() || '?'; }
+function esc(n){ return String(n).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function feed(name, text){
+  const f = $('feed'), d = document.createElement('div'); d.className = 'cm';
+  d.innerHTML = '<div class="ring"><b>' + esc(ini(name)) + '</b></div><div><em>' + esc(name) + '</em>' + esc(text) + '</div>';
+  f.appendChild(d); while (f.children.length > 6) f.firstChild.remove();
+}
+function flyEmoji(e){
+  const h = document.createElement('div'); h.className = 'ht'; h.textContent = e;
+  h.style.setProperty('--dx', (Math.random()*60-40) + 'px');
+  $('hearts').appendChild(h); setTimeout(() => h.remove(), 2700);
+}
+const REACT = ['😂','🤡','🍑','💀','🫦','🤪','🐸','🍆'];
+function heart(){
+  const h = document.createElement('div'); h.className = 'ht';
+  h.textContent = ['❤️','🔥','😐','🫣','💀'][Math.floor(Math.random()*5)];
+  h.style.setProperty('--dx', (Math.random()*60-40) + 'px');
+  $('hearts').appendChild(h); setTimeout(() => h.remove(), 2700);
+}
+setInterval(() => { if (phase === 'run' && Math.random() < .25) heart(); }, 700);
+// тап по экрану в раунде — летит смешная реакция всем, чтобы рассмешить
+let lastReact = 0;
+document.addEventListener('pointerdown', ev => {
+  if (phase !== 'run' || ev.target.closest('button,input')) return;
+  const now = performance.now(); if (now - lastReact < 250) return; lastReact = now;
+  const e = REACT[Math.floor(Math.random()*REACT.length)];
+  if (isHost) broadcast({type:'react', e}); else { flyEmoji(e); send(hostConn, {type:'react', e}); }
+});
+const NICKS = ['Кирпич','Покерфейс','Камень','Сфинкс','Бетон','Робот','Терминатор','Шрек','Бульдог','Монах'];
+function getName(){
+  let n = $('name').value.trim();
+  if (!n){ try { n = localStorage.getItem('nu_name') || ''; } catch(e){} }
+  if (!n) n = NICKS[Math.floor(Math.random()*NICKS.length)] + ' ' + (10 + Math.floor(Math.random()*90));
+  try { localStorage.setItem('nu_name', n); } catch(e){}
+  return n;
+}
+function show(id){ document.querySelectorAll('.scr').forEach(s => s.classList.toggle('on', s.id === id)); }
+function fmt(ms){ const s = ms/1000; return Math.floor(s/60) + ':' + (s%60).toFixed(1).padStart(4,'0'); }
+function code4(){ const a='ABCDEFGHJKLMNPRSTUVWXYZ'; return Array.from({length:4},()=>a[Math.floor(Math.random()*a.length)]).join(''); }
+
+// iOS открывает звук и камеру только после нажатия — разблокируем звуки на первом тапе
+let actx = null; const bufs = {};
+function unlockAudio(){
+  try {
+    if (navigator.audioSession) navigator.audioSession.type = 'playback';  // звук и при выключенном звонке
+    if (!actx){
+      actx = new (window.AudioContext || window.webkitAudioContext)();
+      for (const [k, url] of [['dun','../zvuki/dundun.mp3'], ['rev','../zvuki/reveal.mp3']])
+        fetch(url).then(r => r.arrayBuffer()).then(b => actx.decodeAudioData(b)).then(d => { bufs[k] = d; }).catch(() => {});
+    }
+    if (actx.state !== 'running') actx.resume();
+    const src = actx.createBufferSource(); src.buffer = actx.createBuffer(1, 1, 22050); src.connect(actx.destination); src.start(0);
+  } catch(e){}
+}
+function play(k){
+  if (actx && bufs[k]){ if (actx.state !== 'running') actx.resume(); const s = actx.createBufferSource(); s.buffer = bufs[k]; s.connect(actx.destination); s.start(0); return; }
+  const a = $(k === 'dun' ? 'sDun' : 'sRev'); a.currentTime = 0; a.play().catch(() => {});
+}
+
+async function keepAwake(){ try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch(e){} }
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && stream) keepAwake(); });
+
+async function initCam(){
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('Камера недоступна. Открой ссылку в Safari или Chrome, а не внутри Телеграма или Инстаграма');
+  if (stream && stream.active && stream.getVideoTracks().every(t => t.readyState === 'live')){ $('cam').play().catch(()=>{}); return; }
+  // некоторые встроенные браузеры молча не показывают запрос камеры — не висим, а говорим, что делать
+  stream = await Promise.race([
+    navigator.mediaDevices.getUserMedia({video:{facingMode:'user', width:{ideal:640}, height:{ideal:480}}, audio:false}),
+    new Promise((_, no) => setTimeout(() => no(new Error('Камера не включилась. Нажми «Разрешить», а если запроса нет — открой ссылку в Safari или Chrome')), 15000))
+  ]);
+  $('cam').srcObject = stream;
+  await $('cam').play();
+}
+
+function initModel(){ return modelReady || (modelReady = loadModel().catch(e => { modelReady = null; throw e; })); }
+async function loadModel(){
+  const fs = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
+  const opts = d => ({baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task", delegate:d},
+                      runningMode:'VIDEO', numFaces:1, outputFaceBlendshapes:true});
+  if (IOS){ landmarker = await FaceLandmarker.createFromOptions(fs, opts('CPU')); return; }
+  try { landmarker = await FaceLandmarker.createFromOptions(fs, opts('GPU')); }
+  catch(e){ landmarker = await FaceLandmarker.createFromOptions(fs, opts('CPU')); }
+}
+
+let loopOn = false;
+async function prepareDevice(){
+  unlockAudio();
+  show('game');
+  $('meAv').textContent = ini(myName); $('meName').textContent = myName; $('meTile').textContent = myName + ' (я)';
+  $('status').textContent = 'Включаю камеру…';
+  await initCam();
+  keepAwake();
+  $('status').textContent = 'Загружаю распознавание…';
+  await initModel();
+  $('status').textContent = 'Готов. Ждём старт';
+  $('pv').srcObject = stream; $('pv').play().catch(() => {});
+  if (!loopOn){ loopOn = true; requestAnimationFrame(loop); }
+}
+
+function smileScore(){
+  const v = $('cam');
+  if (!landmarker || v.readyState < 2) return null;
+  if (v.currentTime === lastVideoTime) return lastScore;
+  lastVideoTime = v.currentTime;
+  const r = landmarker.detectForVideo(v, performance.now());
+  const bs = r.faceBlendshapes && r.faceBlendshapes[0];
+  if (!bs){ ema = null; return (lastScore = null); }
+  let l = 0, rr = 0;
+  for (const c of bs.categories){ if (c.categoryName === 'mouthSmileLeft') l = c.score; if (c.categoryName === 'mouthSmileRight') rr = c.score; }
+  const raw = Math.max(l, rr);
+  ema = ema === null ? raw : ema * 0.5 + raw * 0.5;
+  return (lastScore = ema);
+}
+
+function snapshot(){
+  const v = $('cam'), w = 360, h = Math.round(w * v.videoHeight / v.videoWidth);
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const g = c.getContext('2d'); g.translate(w,0); g.scale(-1,1); g.drawImage(v,0,0,w,h);
+  return c.toDataURL('image/jpeg', 0.75);
+}
+
+function loop(){
+  requestAnimationFrame(loop);
+  if (phase !== 'prep' && phase !== 'run' && phase !== 'calib') return;
+  const s = smileScore(), now = performance.now();
+  if (s !== null) $('meter').style.width = Math.min(100, s*100) + '%';
+  if (phase === 'calib' && s !== null) calib.push(s);
+  if (phase === 'run'){
+    $('clock').textContent = fmt(now - t0);
+    if (s === null){
+      if (!noFaceSince) noFaceSince = now;
+      const gone = now - noFaceSince;
+      $('status').textContent = gone > NOFACE_WARN_MS ? '⚠️ Покажи лицо! ' + Math.max(0, (NOFACE_LOSE_MS - gone)/1000).toFixed(1) : 'Лицо не видно';
+      if (!sentSmile && gone > NOFACE_LOSE_MS){ sentSmile = true; reportSmile(lastFaceShot || snapshot(), 'спрятал(а) лицо'); }
+      smileSince = 0;
+    } else {
+      noFaceSince = 0;
+      if (now - lastShotAt > 500){ lastShotAt = now; lastFaceShot = snapshot(); }
+      $('status').textContent = 'Держись…';
+      const thr = Math.max(SMILE_MIN, baseline + SMILE_OVER);
+      if (s > thr){
+        if (!smileSince) smileSince = performance.now();
+        if (!sentSmile && now - smileSince > SMILE_HOLD_MS){ sentSmile = true; reportSmile(snapshot(), 'первым(-ой) улыбнулся(-ась)'); }
+      } else smileSince = 0;
+    }
+  }
+}
+
+// ---------- сеть ----------
+function send(conn, msg){ try { conn.open && conn.send(msg); } catch(e){} }
+function broadcast(msg){ for (const p of players.values()) if (p.conn) send(p.conn, msg); handle(msg); }
+function lobbyList(){ return [...players.entries()].map(([id, p]) => ({id, name: p.name, avatar: p.avatar || '', ready: !!p.ready})); }
+function avHtml(p){ return p.avatar ? '<img src="' + p.avatar + '" alt="">' : esc(ini(p.name)); }
+function okAvatar(a){ return typeof a === 'string' && a.startsWith('data:image/jpeg') && a.length < 80000 ? a : ''; }
+
+// ---------- видео всех игроков (как FaceTime): каждый с каждым напрямую ----------
+function layoutGrid(){ const g = $('grid'); g.className = 'n' + g.children.length; }
+function addTile(id, st){
+  let t = document.querySelector('.tile[data-id="' + CSS.escape(id) + '"]');
+  if (!t){
+    t = document.createElement('div'); t.className = 'tile'; t.dataset.id = id;
+    t.innerHTML = '<video playsinline autoplay muted></video><span class="tname"></span>';
+    $('grid').appendChild(t);
+  }
+  const v = t.querySelector('video'); v.srcObject = st; v.play().catch(() => {});
+  const p = roster.find(r => r.id === id); t.querySelector('.tname').textContent = p ? p.name : '';
+  layoutGrid();
+}
+function removeTile(id){ const t = document.querySelector('.tile[data-id="' + CSS.escape(id) + '"]'); if (t) t.remove(); calls.delete(id); layoutGrid(); }
+function wireCall(c){
+  calls.set(c.peer, c);
+  c.on('stream', st => addTile(c.peer, st));
+  c.on('close', () => removeTile(c.peer));
+  c.on('error', () => removeTile(c.peer));
+}
+function onIncomingCall(c){ c.answer(stream); wireCall(c); }
+function syncCalls(){
+  if (!peer || !stream) return;
+  const ids = new Set(roster.map(r => r.id));
+  for (const id of [...calls.keys()]) if (!ids.has(id)){ try { calls.get(id).close(); } catch(e){} removeTile(id); }
+  // звонит тот, у кого id «меньше», — чтобы двое не звонили друг другу одновременно
+  for (const r of roster) if (r.id !== peer.id && !calls.has(r.id) && peer.id < r.id) wireCall(peer.call(r.id, stream));
+  for (const t of document.querySelectorAll('.tile')){ const p = roster.find(r => r.id === t.dataset.id); if (p) t.querySelector('.tname').textContent = p.name; }
+}
+
+function reportSmile(photo, why){
+  const ms = performance.now() - t0;
+  if (isHost) hostGotSmile(myName, photo, ms, why);
+  else send(hostConn, {type:'smile', photo, ms, why});
+}
+
+let hostStart = 0, loserTaken = false, cands = [];
+function hostGotSmile(name, photo, ms, why){
+  if (loserTaken || phase !== 'run') return;
+  if (typeof photo !== 'string' || !photo.startsWith('data:image/jpeg')) photo = '';
+  if (!(ms > 0)) ms = performance.now() - hostStart;
+  cands.push({name, photo, ms, why: why || ''});
+  if (cands.length > 1) return;
+  // ждём 400 мс: вдруг чья-то улыбка случилась раньше, но дольше ехала по сети
+  setTimeout(() => {
+    if (loserTaken) return;
+    loserTaken = true;
+    const m = cands.reduce((a, b) => b.ms < a.ms ? b : a);
+    broadcast({type:'loser', ...m});
+  }, 400);
+}
+
+function handle(msg){
+  if (msg.type === 'lobby'){
+    roster = msg.players;
+    $('players').innerHTML = roster.map(p => '<div class="av' + (p.ready ? ' ok' : '') + '"><div class="ring"><b>' + avHtml(p) + '</b></div><span>' + esc(p.name) + '</span><small>' + (p.ready ? 'готов' : 'фоткается…') + '</small></div>').join('');
+    $('viewers').textContent = roster.length;
+    const ready = roster.filter(p => p.ready).length, all = ready === roster.length;
+    $('btnStart').disabled = !all;
+    $('btnStart').textContent = all ? 'Начать эфир' : 'Ждём, пока все сфоткаются (' + ready + '/' + roster.length + ')';
+    syncCalls();
+  }
+  if (msg.type === 'start' && phase === 'idle') startRound();
+  if (msg.type === 'react') flyEmoji(msg.e);
+  if (msg.type === 'feed') feed(msg.name, msg.text);
+  if (msg.type === 'loser') showLoser(msg);
+  if (msg.type === 'reset'){ phase = 'idle'; $('pv').play().catch(()=>{}); show('game'); $('clock').textContent = '0:00.0'; $('status').textContent = 'Готов. Ждём старт'; if (isHost) showHostLobby(); else show('lobby'); }
+}
+
+function startRound(){
+  show('game');
+  initCam().catch(() => {});
+  phase = 'prep'; sentSmile = false; smileSince = 0;
+  for (const v of document.querySelectorAll('#grid video')) v.play().catch(() => {});
+  const pa = $('prepAv'); pa.className = '';
+  pa.innerHTML = roster.map((p, i) => '<div class="ring" style="animation-delay:' + (i*0.12) + 's,' + (0.6 + i*0.12) + 's"><b>' + avHtml(p) + '</b></div>').join('');
+  void pa.offsetWidth; pa.className = 'in';
+  $('clock').textContent = '0:00.0';
+  const p = $('prep'); p.style.display = 'flex';
+  $('feed').innerHTML = ''; $('livePill').style.visibility = 'hidden'; p.classList.remove('go');
+  let n = 3; p.textContent = n;
+  calibOn = false; noFaceSince = 0; lastFaceShot = ''; lastShotAt = 0;
+  $('status').textContent = 'Приготовились…';
+  const iv = setInterval(() => {
+    n--;
+    if (n > 0){ p.textContent = n; calibOn = true; return; }
+    if (n === 0){ p.textContent = 'GO'; p.classList.add('go'); pa.className = 'out'; return; }
+    clearInterval(iv); p.style.display = 'none'; pa.innerHTML = '';
+    t0 = performance.now(); if (isHost){ hostStart = t0; loserTaken = false; cands = []; }
+    phase = 'run'; $('livePill').style.visibility = 'visible';
+    feed('эфир', ' начался. Кто первый улыбнётся — проиграл 😐 Тапай по экрану, чтобы рассмешить');
+  }, 1000);
+}
+
+function showLoser(m){
+  phase = 'done';
+  show('res');
+  $('reveal').style.display = 'none'; $('cd').style.display = 'block'; $('cd').classList.add('shake');
+  play('dun');
+  let n = 5; $('cd').textContent = n;
+  const iv = setInterval(() => {
+    n--;
+    if (n > 0){ $('cd').textContent = n; return; }
+    clearInterval(iv);
+    $('cd').style.display = 'none'; $('cd').classList.remove('shake');
+    $('loserName').textContent = m.name;
+    $('loserImg').src = m.photo;
+    $('loserWhy').textContent = '😂 ' + (m.why || 'первым(-ой) улыбнулся(-ась)');
+    $('loserTime').textContent = 'продержался(-ась) ' + fmt(m.ms);
+    $('reveal').style.display = 'flex';
+    $('btnAgain').style.display = isHost ? 'block' : 'none';
+    $('btnShare').style.display = (m.photo && navigator.canShare) ? 'block' : 'none';
+    lastLoser = m;
+    $('againHint').textContent = isHost ? '' : 'Ждём, пока создатель комнаты нажмёт «Ещё раз»';
+    play('rev');
+  }, 1000);
+}
+
+function showHostLobby(){
+  show('lobby');
+  $('btnStart').style.display = 'block';
+  $('lobbyHint').textContent = 'Отправь друзьям ссылку — они нажмут одну кнопку';
+  $('btnInvite').style.display = 'block';
+  broadcast({type:'lobby', players: lobbyList()});
+}
+
+async function createRoom(){
+  myName = getName();
+  isHost = true;
+  await prepareDevice();
+  openHostPeer(code4());
+}
+
+function openHostPeer(code){
+  peer = new Peer(PREFIX + code);
+  peer.on('open', () => {
+    $('roomCode').textContent = code;
+    players.set(peer.id, {name: myName, conn: null, avatar: myAvatar, ready: myReady});
+    showHostLobby();
+  });
+  peer.on('call', onIncomingCall);
+  peer.on('connection', conn => {
+    conn.on('data', msg => {
+      if (msg.type === 'hello'){ players.set(conn.peer, {name: msg.name, conn}); broadcast({type:'lobby', players: lobbyList()}); broadcast({type:'feed', name: msg.name, text:'присоединился(-ась) к эфиру'}); }
+      if (msg.type === 'ready'){ const p = players.get(conn.peer); if (p){ p.avatar = okAvatar(msg.avatar); p.ready = true; broadcast({type:'lobby', players: lobbyList()}); } }
+      if (msg.type === 'react'){ for (const [id, p] of players) if (p.conn && id !== conn.peer) send(p.conn, msg); flyEmoji(msg.e); }
+      if (msg.type === 'smile'){ const p = players.get(conn.peer); hostGotSmile(p ? p.name : '?', msg.photo, msg.ms, msg.why); }
+    });
+    conn.on('close', () => { players.delete(conn.peer); broadcast({type:'lobby', players: lobbyList()}); });
+  });
+  peer.on('error', e => {
+    if (e.type === 'unavailable-id'){ peer.destroy(); openHostPeer(code4()); return; }
+    $('lobbyErr').textContent = 'Ошибка связи: ' + e.type;
+  });
+  peer.on('disconnected', () => { if (!peer.destroyed) peer.reconnect(); });
+}
+
+async function joinRoom(){
+  myName = getName();
+  const code = ($('code').value.trim() || INVITE).toUpperCase();
+  if (code.length !== 4){ $('homeErr').textContent = 'Введи код из 4 букв'; return; }
+  await prepareDevice();
+  let joined = false;
+  const to = setTimeout(() => { if (!joined){ show('home'); $('homeErr').textContent = 'Не удалось подключиться. Проверь код или попробуй через Wi‑Fi'; try { peer.destroy(); } catch(e){} } }, 12000);
+  peer = new Peer();
+  peer.on('call', onIncomingCall);
+  peer.on('disconnected', () => { if (!peer.destroyed) peer.reconnect(); });
+  peer.on('open', () => {
+    if (hostConn && hostConn.open) return;
+    hostConn = peer.connect(PREFIX + code, {reliable: true});
+    hostConn.on('open', () => {
+      joined = true; clearTimeout(to);
+      send(hostConn, {type:'hello', name: myName});
+      if (myReady) send(hostConn, {type:'ready', avatar: myAvatar});
+      $('roomCode').textContent = code;
+      $('lobbyHint').textContent = 'Ждём, пока создатель нажмёт СТАРТ';
+      show('lobby');
+    });
+    hostConn.on('data', handle);
+    hostConn.on('close', () => { show('lobby'); $('lobbyErr').textContent = 'Создатель комнаты отключился'; });
+  });
+  peer.on('error', e => {
+    if (joined){ $('lobbyErr').textContent = 'Связь шалит: ' + e.type; return; }
+    clearTimeout(to); show('home');
+    $('homeErr').textContent = e.type === 'peer-unavailable' ? 'Комната не найдена' : 'Ошибка связи: ' + e.type;
+  });
+}
+
+function guard(fn){ return async () => {
+  $('homeErr').textContent = '';
+  try { await fn(); }
+  catch(e){ show('home'); $('homeErr').textContent = e && e.name === 'NotAllowedError' ? 'Разреши доступ к камере в настройках браузера' : 'Не получилось: ' + (e.message || e); }
+}; }
+
+const INVITE = (new URLSearchParams(location.search).get('r') || '').toUpperCase().slice(0, 4);
+try { $('name').value = localStorage.getItem('nu_name') || ''; } catch(e){}
+if (INVITE.length === 4){
+  $('btnPlay').textContent = 'ВОЙТИ В ЭФИР';
+  $('inviteHint').style.display = 'block'; $('inviteHint').textContent = 'Тебя позвали в комнату ' + INVITE;
+}
+$('btnPlay').onclick = guard(INVITE.length === 4 ? joinRoom : createRoom);
+$('btnInvite').onclick = async () => {
+  const url = location.origin + location.pathname + '?r=' + $('roomCode').textContent;
+  try { if (navigator.share){ await navigator.share({title: 'Не улыбайся', text: 'Го в эфир, кто первый улыбнётся — проиграл 😐', url}); return; } } catch(e){ return; }
+  try { await navigator.clipboard.writeText(url); $('btnInvite').textContent = '✅ Ссылка скопирована'; } catch(e){ prompt('Ссылка для друзей', url); }
+};
+$('btnJoin').onclick = guard(joinRoom);
+function smallShot(){
+  const v = $('cam'), sz = 160, c = document.createElement('canvas'); c.width = c.height = sz;
+  const k = Math.min(v.videoWidth, v.videoHeight), g = c.getContext('2d');
+  g.translate(sz, 0); g.scale(-1, 1);
+  g.drawImage(v, (v.videoWidth - k)/2, (v.videoHeight - k)/2, k, k, 0, 0, sz, sz);
+  return c.toDataURL('image/jpeg', 0.7);
+}
+$('btnFace').onclick = () => {
+  unlockAudio();
+  if (!landmarker){ $('faceHint').textContent = 'Ещё загружаю распознавание, секунду…'; return; }
+  phase = 'calib'; calib = [];
+  $('btnFace').disabled = true; $('faceHint').textContent = 'Замри… 😐';
+  setTimeout(() => {
+    phase = 'idle'; $('btnFace').disabled = false;
+    if (calib.length < 4){ $('faceHint').textContent = 'Лицо не видно — посмотри прямо в камеру и нажми ещё раз'; return; }
+    const sorted = calib.slice().sort((a, b) => a - b), med = sorted[Math.floor(sorted.length/2)];
+    if (med > 0.5){ $('faceHint').textContent = 'Ты улыбаешься 😏 Сделай серьёзное лицо и нажми ещё раз'; return; }
+    baseline = Math.min(0.25, med);
+    myAvatar = smallShot(); myReady = true;
+    $('btnFace').textContent = '🔄 Переснять'; $('faceHint').textContent = 'Готово ✅ Это твоё обычное лицо';
+    if (isHost){ const p = players.get(peer.id); if (p){ p.avatar = myAvatar; p.ready = true; } broadcast({type:'lobby', players: lobbyList()}); }
+    else send(hostConn, {type:'ready', avatar: myAvatar});
+  }, 1300);
+};
+$('btnStart').onclick = () => { unlockAudio(); if (phase === 'idle' && players.size && lobbyList().every(p => p.ready)) broadcast({type:'start'}); };
+let lastLoser = null;
+$('btnShare').onclick = async () => {
+  try {
+    const blob = await (await fetch(lastLoser.photo)).blob();
+    const file = new File([blob], 'ne-ulybaysya.jpg', {type: 'image/jpeg'});
+    const data = {files: [file], text: lastLoser.name + ' не выдержал(а) 😂'};
+    if (navigator.canShare(data)) await navigator.share(data);
+  } catch(e){}
+};
+$('btnAgain').onclick = () => { unlockAudio(); broadcast({type:'reset'}); };
+document.addEventListener('touchend', unlockAudio, {once: true});
+initModel().catch(() => {});   // модель (~10 МБ) грузим сразу на главном экране
+</script>
+</body>
+</html>
