@@ -787,7 +787,7 @@ function guard(fn){ return async () => {
 
 // ---------- Telegram Mini App: без сервера и без токена бота ----------
 // Ссылка-приглашение: t.me/<TG_BOT>/<TG_APP>?startapp=КОД. Пока бот не заведён (пусто) — зовём обычной ссылкой на сайт.
-const TG_BOT = '', TG_APP = '';
+const TG_BOT = 'bigame_official_bot', TG_APP = 'ulybka';
 const TG = window.Telegram && Telegram.WebApp && Telegram.WebApp.initData ? Telegram.WebApp : null;
 if (TG){
   try {
