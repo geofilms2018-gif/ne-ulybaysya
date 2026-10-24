@@ -10,7 +10,7 @@
   :root{--bg:#000;--fg:#fff;--mut:#a8a8a8;--live:#ff0050;--ig:linear-gradient(45deg,#feda75 0%,#fa7e1e 25%,#d62976 50%,#962fbf 75%,#4f5bd5 100%)}
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",system-ui,sans-serif;overflow:hidden}
-  .scr{position:fixed;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;padding:24px 16px calc(24px + env(safe-area-inset-bottom));gap:14px;text-align:center}
+  .scr{position:fixed;top:0;left:0;right:0;height:var(--tg-viewport-stable-height,100%);display:none;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;flex-direction:column;align-items:center;justify-content:center;padding:24px 16px calc(24px + env(safe-area-inset-bottom));gap:14px;text-align:center}
   .scr.on{display:flex}
   #home{background:radial-gradient(120% 80% at 50% 0%,#2a0a3a 0%,#000 60%)}
   .logo{width:96px;height:96px;border-radius:28px;background:var(--ig);display:flex;align-items:center;justify-content:center;font-size:54px;box-shadow:0 10px 40px #d6297666}
@@ -59,6 +59,9 @@
   .pvwrap{position:relative;width:150px;height:190px;border-radius:22px;overflow:hidden;padding:3px;background:var(--ig);flex:none}
   .pvwrap video{border-radius:19px;inset:3px;width:calc(100% - 6px);height:calc(100% - 6px)}
   #lobby{gap:10px}
+  .scr>*{flex-shrink:0} #lobby>:first-child,#home>:first-child{margin-top:auto} #lobby>:last-child,#home>:last-child{margin-bottom:auto}
+  #game{overflow:hidden}
+  #btnStart{position:sticky;bottom:calc(8px + env(safe-area-inset-bottom));z-index:5}
   #lobby .bigcode{font-size:40px}
   .ring b img{width:100%;height:100%;border-radius:50%;object-fit:cover}
   .av.ok .ring{box-shadow:0 0 0 2px #2ecc71}
@@ -69,12 +72,19 @@
   .tile video{width:100%;height:100%;object-fit:cover}
   .ph .ring{width:76px;height:76px}
   .ph{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--mut);font-size:13px}
-  .tile.live .ph{display:none}
+  .tile.live .ph,.tile.fbon .ph{display:none}
+  .tile img.fb{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1);display:none}
+  .tile.fbon:not(.live) img.fb{display:block}
   .mic{position:absolute;right:8px;bottom:8px;z-index:2;display:none;width:38px;height:38px;padding:0;border-radius:50%;font-size:18px;background:#000a;border:0;color:#fff}
   body.voice .mic{display:block}
   .modes{display:flex;gap:8px;width:100%;max-width:340px}
   .modes button{flex:1;padding:12px 6px;font-size:15px}
   .modes button.on{background:var(--ig);color:#fff}
+  .masks{display:flex;gap:8px;overflow-x:auto;width:100%;max-width:360px;padding:4px 2px 8px;scrollbar-width:none}
+  .mk{flex:none;width:66px;display:flex;flex-direction:column;align-items:center;gap:2px;background:#1a1a1a;border:2px solid #1a1a1a;border-radius:14px;padding:4px 2px;font-size:10px;color:#ddd;cursor:pointer;position:relative}
+  .mk.on{border-color:#ff2d7a} .mk canvas{width:54px;height:54px}
+  .mk i{position:absolute;top:2px;right:4px;font-style:normal;font-size:10px}
+  .mk.lock canvas{opacity:.55}
   #btnMic{display:none;max-width:220px} body.voice #btnMic{display:block}
   .tname{position:absolute;left:10px;bottom:8px;z-index:1;font-weight:700;font-size:13px;background:#0007;padding:3px 8px;border-radius:10px}
   #prepAv{position:absolute;top:22%;left:0;right:0;display:flex;justify-content:center;gap:14px;z-index:4;pointer-events:none}
@@ -123,8 +133,10 @@
   <button class="sec" id="btnInvite" style="display:none">📲 Позвать друзей</button>
   <div class="modes" id="modes" style="display:none"><button class="sec on" id="mNear">🤝 Рядом</button><button class="sec" id="mFar">🌍 Дистанционно</button></div>
   <p id="modeHint">Режим: 🤝 рядом — без голоса</p>
-  <div class="pvwrap"><video id="pv" playsinline muted autoplay></video></div>
+  <div class="pvwrap"><video id="pv" playsinline muted autoplay></video><video id="pvMask" playsinline muted autoplay style="display:none"></video></div>
   <button class="sec" id="btnMic">🎤 Микрофон включён</button>
+  <div class="masks" id="maskBar"></div>
+  <p id="maskHint">Маска — видна всем на твоём видео</p>
   <button class="grad" id="btnFace">📸 Это моё обычное лицо</button>
   <p id="faceHint">Сделай серьёзное лицо и нажми — это будет твоя аватарка</p>
   <div id="players"></div>
@@ -133,7 +145,7 @@
 </section>
 
 <section class="scr" id="game">
-  <div id="grid"><div class="tile" data-id="me"><video id="cam" playsinline muted autoplay></video><span class="tname" id="meTile">я</span><button class="mic" id="meMic">🎤</button></div></div>
+  <div id="grid"><div class="tile" data-id="me"><video id="cam" playsinline muted autoplay></video><video id="meMask" playsinline muted autoplay style="display:none"></video><span class="tname" id="meTile">я</span><button class="mic" id="meMic">🎤</button></div></div>
   <div class="shade"></div>
   <div class="top">
     <div class="me"><div class="ring"><b id="meAv">?</b></div><span id="meName"></span></div>
@@ -174,6 +186,7 @@
 <script src="https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js"></script>
 <script type="module">
 import {FaceLandmarker, FilesetResolver} from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
+import {MASKS, faceFrame, previewFrame, drawMask} from "./maski.js";
 
 const $ = id => document.getElementById(id);
 const PREFIX = 'ne-ulybaysya-v2-';   // id для видео (WebRTC)
@@ -280,8 +293,8 @@ async function initCam(){
   $('cam').srcObject = stream;
   if ($('pv').srcObject) $('pv').srcObject = stream;
   // камеру включили заново (после сворачивания) — подменяем картинку во всех звонках
-  const tr = stream.getVideoTracks()[0];
-  for (const c of [...calls.values(), ...relaysOut()]) try { for (const sd of c.peerConnection.getSenders()) if (sd.track && sd.track.kind === 'video' && sd.track.readyState !== 'live') sd.replaceTrack(tr); } catch(e){}
+  const tr = vidTrack();
+  for (const c of calls.values()) try { for (const sd of c.peerConnection.getSenders()) if (sd.track && sd.track.kind === 'video' && sd.track.readyState !== 'live') sd.replaceTrack(tr); } catch(e){}
   await $('cam').play();
 }
 
@@ -309,6 +322,9 @@ async function prepareDevice(){
   $('status').textContent = 'Готов. Ждём старт';
   $('pv').srcObject = stream; $('pv').play().catch(() => {});
   if (!loopOn){ loopOn = true; requestAnimationFrame(loop); }
+  let sm = ''; try { sm = localStorage.getItem('nu_mask') || ''; } catch(e){}
+  const m = MASKS.find(x => x.id === sm);
+  if (m && (m.free || ALLMASKS) && !maskId) setMask(sm);
 }
 
 const detCv = document.createElement('canvas'), detG = detCv.getContext('2d');
@@ -319,6 +335,7 @@ function detectRaw(v){
   if (detCv.width !== DET_W || detCv.height !== h){ detCv.width = DET_W; detCv.height = h; }
   detG.drawImage(v, 0, 0, DET_W, h);
   const r = landmarker.detectForVideo(detCv, performance.now()), bs = r.faceBlendshapes && r.faceBlendshapes[0];
+  faceLm = r.faceLandmarks && r.faceLandmarks[0] || null;
   if (!bs) return null;
   let l = 0, rr = 0;
   for (const c of bs.categories){ if (c.categoryName === 'mouthSmileLeft') l = c.score; if (c.categoryName === 'mouthSmileRight') rr = c.score; }
@@ -334,14 +351,17 @@ function snapshot(){
 
 function loop(){
   requestAnimationFrame(loop);
-  if (phase !== 'prep' && phase !== 'run') return;
-  const now = performance.now(), v = $('cam');
+  const play = phase === 'prep' || phase === 'run';
+  if (!play && !maskId) return;   // в лобби детектор крутится, только если надета маска
+  const now = performance.now(), v = $('lobby').classList.contains('on') ? $('pv') : $('cam');
   if (phase === 'run') $('clock').textContent = fmt(now - t0);
-  if (now - lastDet < DET_MS || v.currentTime === lastVideoTime) return;
+  if (now - lastDet < (play ? DET_MS : 100) || v.currentTime === lastVideoTime) return;
   const s = detectRaw(v);
   if (s === undefined) return;
   detFps = detFps ? detFps * 0.9 + 100 / (now - lastDet) : 1000 / DET_MS;   // реальная частота детектора (для отладки)
   lastDet = now; lastVideoTime = v.currentTime;
+  if (maskId) drawOut(v, now);
+  if (!play) return;
   if (s !== null) $('meter').style.width = Math.min(100, s*100) + '%';
   if (phase !== 'run') return;
   if (s === null){
@@ -382,23 +402,23 @@ function netOpen(code, willKey, will){
     for (const url of BROKERS){
       const c = mqtt.connect(url, {clientId: 'nu_' + myId + '_' + rid().slice(0, 4), keepalive: 20, reconnectPeriod: 2000, connectTimeout: 8000,
         will: {topic: topic(willKey), payload: JSON.stringify(will), qos: 1}});
-      c.on('connect', () => c.subscribe([topic('h'), topic('all')], {qos: 1}, err => { if (!err && !up){ up = true; clearTimeout(to); resolve(); } }));
+      c.on('connect', () => c.subscribe({[topic('h')]: {qos: 1}, [topic('all')]: {qos: 1}, [topic('x')]: {qos: 0}}, err => { if (!err && !up){ up = true; clearTimeout(to); resolve(); } }));
       c.on('message', (t, buf) => {
         let m; try { m = JSON.parse(buf.toString()); } catch(e){ return; }
         if (!m || !m.mid || seen.has(m.mid)) return;
         seen.add(m.mid); seenQ.push(m.mid); if (seenQ.length > 1000) seen.delete(seenQ.shift());
-        route(t.endsWith('/h') ? 'h' : 'all', m);
+        route(t.endsWith('/h') ? 'h' : t.endsWith('/x') ? 'x' : 'all', m);
       });
       c.on('error', () => {});
       clients.push(c);
     }
   });
 }
-function pub(k, msg){
+function pub(k, msg, qos){
   msg.mid = rid(); msg.from = myId; if (isHost) msg.ep = ep;
   seen.add(msg.mid);   // своё эхо не обрабатываем
   const data = JSON.stringify(msg);
-  for (const c of clients) try { c.publish(topic(k), data, {qos: 1}); } catch(e){}
+  for (const c of clients) try { c.publish(topic(k), data, {qos: qos === 0 ? 0 : 1}); } catch(e){}
 }
 function toHost(msg){ pub('h', msg); }
 function broadcast(msg){ pub('all', msg); handle(msg); }
@@ -406,6 +426,7 @@ function sendLobby(){ broadcast({type:'lobby', players: lobbyList(), ph: phase, 
 function lobbyList(){ return [...players.entries()].map(([id, p]) => ({id, name: p.name, avatar: p.avatar || '', ready: !!p.ready, loss: p.loss || 0, v: !!p.v})); }
 function route(k, m){
   if (!m.from || m.from === myId) return;
+  if (k === 'x'){ frameNet(m); return; }
   if (k === 'h'){ if (isHost) hostNet(m); return; }
   if (isHost){ if ((m.ep || 0) > ep) demote(m); return; }   // в комнате уже есть ведущий новее — уступаем
   if ((m.ep || 0) < ep) return;                              // старый ведущий вернулся — не слушаем
@@ -498,10 +519,55 @@ window.addEventListener('pagehide', () => { if (room) pub(isHost ? 'all' : 'h', 
 function avHtml(p){ return p.avatar ? '<img src="' + p.avatar + '" alt="">' : esc(ini(p.name)); }
 function okAvatar(a){ return typeof a === 'string' && a.startsWith('data:image/jpeg') && a.length < 80000 ? a : ''; }
 
+// ---------- маски: детектор смотрит на чистую камеру, а в звонки уходит кадр с маской ----------
+const ALLMASKS = new URLSearchParams(location.search).has('allmasks');   // для скринов всех масок
+let maskId = '', maskStart = 0, faceLm = null, outCv = null, outG = null, maskTrack = null, maskStream = null;
+function drawOut(v, now){
+  const w = v.videoWidth, h = v.videoHeight;
+  if (outCv.width !== w || outCv.height !== h){ outCv.width = w; outCv.height = h; }
+  outG.drawImage(v, 0, 0, w, h);
+  if (faceLm) drawMask(outG, maskId, faceFrame(faceLm, w, h), now / 1000, maskStart / 1000);
+}
+function camTrack(){ return stream ? stream.getVideoTracks()[0] : null; }
+function vidTrack(){ return maskId && maskTrack ? maskTrack : camTrack(); }
+function setMask(id){
+  maskId = id || ''; maskStart = performance.now();
+  if (maskId && !outCv){
+    outCv = document.createElement('canvas'); outCv.width = 480; outCv.height = 360; outG = outCv.getContext('2d');
+    maskStream = outCv.captureStream(15); maskTrack = maskStream.getVideoTracks()[0];
+  }
+  if (maskId && stream && $('cam').videoWidth) drawOut($('cam'), maskStart);
+  for (const vid of ['pvMask', 'meMask']){ const e = $(vid); e.srcObject = maskId ? maskStream : null; e.style.display = maskId ? 'block' : 'none'; if (maskId) e.play().catch(() => {}); }
+  const tr = vidTrack();
+  for (const c of calls.values()) try { for (const sd of c.peerConnection.getSenders()) if (sd.track && sd.track.kind === 'video' && sd.track !== tr) sd.replaceTrack(tr); } catch(e){}
+  for (const el of document.querySelectorAll('.mk')) el.classList.toggle('on', el.dataset.id === maskId);
+  try { localStorage.setItem('nu_mask', maskId); } catch(e){}
+}
+function buildMaskBar(){
+  const bar = $('maskBar'), items = [{id: '', name: 'Без маски', free: true}, ...MASKS];
+  for (const m of items){
+    const el = document.createElement('div'), open = m.free || ALLMASKS;
+    el.className = 'mk' + (open ? '' : ' lock'); el.dataset.id = m.id;
+    const cv = document.createElement('canvas'); cv.width = cv.height = 108;
+    const g = cv.getContext('2d'), f = previewFrame(108);
+    g.fillStyle = '#3a3a3a'; g.beginPath(); g.ellipse(f.x, f.y + f.W * 0.62, f.W * 0.52, f.W * 0.66, 0, 0, Math.PI * 2); g.fill();
+    if (m.id) drawMask(g, m.id, f, 0.6, -5);
+    el.append(cv); el.insertAdjacentHTML('beforeend', '<span>' + esc(m.name) + '</span>' + (open ? '' : '<i>⭐</i>'));
+    el.onclick = () => {
+      if (!open){ $('maskHint').textContent = '⭐ «' + m.name + '» — скоро за звёзды'; return; }
+      $('maskHint').textContent = m.id ? 'Маска «' + m.name + '» — видна всем на твоём видео' : 'Маска — видна всем на твоём видео';
+      setMask(m.id);
+    };
+    bar.append(el);
+  }
+  for (const el of bar.querySelectorAll('.mk')) el.classList.toggle('on', el.dataset.id === maskId);
+}
+buildMaskBar();
+
 // ---------- голос: «Рядом» — без звука, «Дистанционно» — голосовая связь ----------
 let voice = false, mic = null, micOn = true;
 function outStream(){   // что отправляем в звонки: камера + микрофон в дистанционном режиме
-  const t = stream ? stream.getVideoTracks() : [];
+  const v = vidTrack(), t = v ? [v] : [];
   return new MediaStream(voice && mic ? [...t, ...mic.getAudioTracks()] : t);
 }
 function applyAudio(t){
@@ -542,10 +608,42 @@ function redial(){
   syncCalls();
 }
 
+// ---------- запасное видео: если WebRTC не встал (сотовый NAT, нет TURN), кадры 160 px идут через MQTT ----------
+const NORTC = new URLSearchParams(location.search).has('nortc');   // тест «как на сотовой»: WebRTC без связи вообще
+const FB_MS = 250, fbCv = document.createElement('canvas'), fbG = fbCv.getContext('2d');
+let needMe = 0, lastFb = 0;
+const needAt = new Map(), firstSeen = new Map();
+function frameNet(m){
+  if (m.type === 'need' && m.of === myId) needMe = Date.now();
+  if (m.type === 'fr' && typeof m.d === 'string' && m.d.startsWith('data:image/jpeg')){
+    const t = tileOf(m.from); if (!t || t.classList.contains('live')) return;
+    t.querySelector('img.fb').src = m.d; t.classList.add('fbon'); t._fb = Date.now();
+  }
+}
+function fallbackTick(){
+  if (!room || !stream) return;
+  const now = Date.now();
+  // кому-то нужны мои кадры — шлём ~4 в секунду
+  if (now - needMe < 7000 && now - lastFb >= FB_MS){
+    const v = maskId && outCv ? outCv : $('cam'), w = 160, vw = v.videoWidth || v.width, vh = v.videoHeight || v.height;
+    if (vw){ lastFb = now; fbCv.width = w; fbCv.height = Math.round(w * vh / vw); fbG.drawImage(v, 0, 0, fbCv.width, fbCv.height); pub('x', {type:'fr', d: fbCv.toDataURL('image/jpeg', 0.55)}, 0); }
+  }
+  // у кого-то нет видео дольше 4 с — просим кадры
+  for (const r of roster){
+    if (r.id === myId) continue;
+    if (!firstSeen.has(r.id)) firstSeen.set(r.id, now);
+    const t = tileOf(r.id);
+    if (t && t.classList.contains('fbon') && (t.classList.contains('live') || now - t._fb > 5000)) t.classList.remove('fbon');
+    if ((t && t.classList.contains('live')) || now - firstSeen.get(r.id) < 4000 || now - (needAt.get(r.id) || 0) < 3000) continue;
+    needAt.set(r.id, now); pub('x', {type:'need', of: r.id}, 0);
+  }
+}
+setInterval(fallbackTick, FB_MS);
+
 // ---------- видео всех игроков (как FaceTime) ----------
 // Сначала каждый звонит каждому напрямую. Если гость↔гость не соединились за 3 с (сотовый NAT),
 // гость просит создателя переслать ему видео этого игрока: с создателем связь есть у всех.
-window.__nu = {get fps(){ return detFps; }};   // для тестов
+window.__nu = {get fps(){ return detFps; }, out: () => outCv ? outCv.toDataURL('image/png') : '', mask: id => setMask(id)};   // для тестов
 const NOMESH = new URLSearchParams(location.search).has('nomesh');   // для теста запасного пути
 const remote = new Map();    // id -> MediaStream, пришедший напрямую
 const relays = new Map();    // гость: id -> звонок-пересылка; создатель: 'гость|id' -> звонок
@@ -558,7 +656,7 @@ function ensureTile(id){
   let t = tileOf(id);
   if (!t){
     t = document.createElement('div'); t.className = 'tile'; t.dataset.id = id;
-    t.innerHTML = '<video playsinline autoplay muted></video><div class="ph"><div class="ring"><b></b></div><small>подключаю видео…</small></div><span class="tname"></span><button class="mic">🔊</button>';
+    t.innerHTML = '<video playsinline autoplay muted></video><div class="ph"><div class="ring"><b></b></div><small>подключаю видео…</small></div><img class="fb" alt=""><span class="tname"></span><button class="mic">🔊</button>';
     const b = t.querySelector('.mic'), v = t.querySelector('video');
     b.onclick = ev => { ev.stopPropagation(); t.dataset.mute = t.dataset.mute ? '' : '1'; applyAudio(t); };
     $('grid').appendChild(t);
@@ -569,18 +667,19 @@ function ensureTile(id){
   t.querySelector('.ph small').textContent = w && Date.now() - w > 10000 ? 'нет связи' : 'подключаю видео…';
   return t;
 }
-function setTileStream(id, st){
+// PeerJS отдаёт поток ещё до соединения: картинка реально идёт, только когда видеотрек «размьючен»
+function flowing(st){ return !!st && st.getVideoTracks().some(t => t.readyState === 'live' && !t.muted); }
+function refreshTile(id){
   const t = ensureTile(id), v = t.querySelector('video');
-  if (v.srcObject !== st){ v.srcObject = st; applyAudio(t); v.play().catch(() => {}); }
-  t.classList.add('live'); layoutGrid();
+  const a = remote.get(id), r = relays.get(id), b = r && r.st;
+  const best = flowing(a) ? a : flowing(b) ? b : null;
+  if (best && v.srcObject !== best){ v.srcObject = best; applyAudio(t); v.play().catch(() => {}); }
+  if (!best && v.srcObject) v.srcObject = null;
+  t.classList.toggle('live', !!best && v.videoWidth > 0);
+  if (!t._w){ t._w = 1; v.addEventListener('resize', () => refreshTile(id)); v.addEventListener('loadeddata', () => refreshTile(id)); }
+  layoutGrid();
 }
-function clearTile(id, st){
-  const t = tileOf(id); if (!t) return;
-  const v = t.querySelector('video'); if (st && v.srcObject !== st) return;
-  v.srcObject = null; t.classList.remove('live');
-  if (remote.has(id)) setTileStream(id, remote.get(id));
-  else if (relays.has(id) && relays.get(id).st) setTileStream(id, relays.get(id).st);
-}
+function liveTile(id){ const t = tileOf(id); return !!t && t.classList.contains('live'); }
 // видео собеседникам: до 300 кбит/с и 15 кадров — телефон меньше греется
 function capSenders(c){
   try { for (const sd of c.peerConnection.getSenders()) if (sd.track && sd.track.kind === 'video'){
@@ -597,13 +696,13 @@ function wireCall(c, id){
   capLater(c);
   calls.set(id, c);
   // нет картинки за 8 с — бросаем звонок, следующий пульс позвонит заново
-  const to = setTimeout(() => { if (calls.get(id) === c){ calls.delete(id); try { c.close(); } catch(e){} } }, 8000);
+  const to = setTimeout(() => { if (calls.get(id) === c && !flowing(remote.get(id))){ calls.delete(id); remote.delete(id); refreshTile(id); try { c.close(); } catch(e){} } }, 8000);
   c.on('stream', st => {
-    clearTimeout(to); if (calls.get(id) !== c) return;
-    remote.set(id, st); setTileStream(id, st);
-    if (!isHost && relays.has(id)){ const r = relays.get(id); relays.delete(id); try { r.close(); } catch(e){} }   // прямое пришло — пересылка не нужна
+    if (calls.get(id) !== c) return;
+    remote.set(id, st); refreshTile(id);
+    for (const tr of st.getVideoTracks()) tr.addEventListener('unmute', () => refreshTile(id));
   });
-  const end = () => { clearTimeout(to); if (calls.get(id) !== c) return; calls.delete(id); const st = remote.get(id); remote.delete(id); clearTile(id, st); };
+  const end = () => { clearTimeout(to); if (calls.get(id) !== c) return; calls.delete(id); remote.delete(id); refreshTile(id); };
   c.on('close', end); c.on('error', end);
 }
 function onIncomingCall(c){
@@ -611,8 +710,8 @@ function onIncomingCall(c){
   if (of){   // создатель пересылает видео игрока of
     const old = relays.get(of); if (old) try { old.close(); } catch(e){}
     relays.set(of, c); c.answer();
-    c.on('stream', st => { c.st = st; if (relays.get(of) === c && !remote.has(of)) setTileStream(of, st); });
-    const end = () => { if (relays.get(of) === c){ relays.delete(of); clearTile(of, c.st); } };
+    c.on('stream', st => { c.st = st; refreshTile(of); for (const tr of st.getVideoTracks()) tr.addEventListener('unmute', () => refreshTile(of)); });
+    const end = () => { if (relays.get(of) === c){ relays.delete(of); refreshTile(of); } };
     c.on('close', end); c.on('error', end);
     return;
   }
@@ -622,7 +721,7 @@ function onIncomingCall(c){
 }
 // создатель: гость g не видит игрока of — шлём ему видео of со своего телефона
 function hostRelay(g, of){
-  const k = g + '|' + of, st = remote.get(of);
+  const k = g + '|' + of, st = flowing(remote.get(of)) ? remote.get(of) : null;
   if (!peer || !peer.open || !st || relays.has(k) || !players.has(g)) return;
   const c = peer.call(PREFIX + g, st, {metadata: {of}});
   if (!c) return;
@@ -633,7 +732,7 @@ function hostRelay(g, of){
 }
 function startVideo(){
   if (peer && !peer.destroyed) return;
-  peer = new Peer(PREFIX + myId);
+  peer = new Peer(PREFIX + myId, NORTC ? {config: {iceServers: [], iceTransportPolicy: 'relay'}} : {});
   peer.on('open', () => {   // видео готово — говорим всем, чтобы звонили сразу, а не в пустоту
     if (isHost){ const p = players.get(myId); if (p){ p.v = true; sendLobby(); } }
     else toHost({type:'vid'});
@@ -652,7 +751,11 @@ function syncCalls(){
   for (const id of [...since.keys()]) if (!ids.has(id)) since.delete(id);
   for (const r of roster) if (r.id !== myId && r.v && !since.has(r.id)) since.set(r.id, Date.now());   // с момента, как у него поднялось видео
   for (const t of document.querySelectorAll('.tile:not([data-id="me"])')) if (!ids.has(t.dataset.id)) t.remove();
-  for (const r of roster) if (r.id !== myId) ensureTile(r.id);
+  for (const r of roster) if (r.id !== myId){
+    refreshTile(r.id);
+    // прямое видео пошло — пересылка через создателя больше не нужна
+    if (!isHost && relays.has(r.id) && flowing(remote.get(r.id))){ const c = relays.get(r.id); relays.delete(r.id); try { c.close(); } catch(e){} }
+  }
   layoutGrid();
   if (!peer || !peer.open || !stream) return;
   // мёртвые звонки (собеседник закрыл, связь порвалась) PeerJS не всегда сообщает — проверяем сами и перезваниваем
@@ -664,7 +767,7 @@ function syncCalls(){
     if (!dead && !shaky){ c._bad = 0; continue; }
     if (!c._bad){ c._bad = now; continue; }
     if (now - c._bad < (dead ? 2000 : 8000)) continue;
-    calls.delete(id); remote.delete(id); clearTile(id, st); try { c.close(); } catch(e){}
+    calls.delete(id); remote.delete(id); refreshTile(id); try { c.close(); } catch(e){}
   }
   for (const id of [...calls.keys()]) if (!ids.has(id)){ try { calls.get(id).close(); } catch(e){} calls.delete(id); remote.delete(id); }
   for (const [k, c] of [...relays]) if (!ids.has(isHost ? k.split('|')[0] : k) || (isHost && !ids.has(k.split('|')[1]))){ relays.delete(k); try { c.close(); } catch(e){} }
@@ -675,7 +778,7 @@ function syncCalls(){
     wireCall(peer.call(PREFIX + r.id, outStream()), r.id);
   }
   if (!isHost) for (const r of roster){
-    if (r.id === myId || r.id === hostId || !since.has(r.id) || remote.has(r.id) || relays.has(r.id)) continue;
+    if (r.id === myId || r.id === hostId || !since.has(r.id) || flowing(remote.get(r.id)) || (relays.has(r.id) && flowing(relays.get(r.id).st))) continue;
     if (Date.now() - since.get(r.id) < 3000 || Date.now() - (askedAt.get(r.id) || 0) < 4000) continue;
     askedAt.set(r.id, Date.now()); toHost({type:'relay', of: r.id});
   }
