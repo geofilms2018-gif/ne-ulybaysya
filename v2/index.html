@@ -190,7 +190,7 @@ import {MASKS, faceFrame, previewFrame, drawMask} from "../maski.js";
 
 const $ = id => document.getElementById(id);
 const PREFIX = 'ne-ulybaysya-v2-';   // id для видео (WebRTC)
-const SMILE_MIN = 0.45;      // минимальный порог улыбки
+const SMILE_MIN = 0.5;       // минимальный порог улыбки (оценка уже без открытого рта)
 const SMILE_OVER = 0.25;     // насколько выше спокойного лица
 const SMILE_FRAMES = 2, SMILE_HOLD_MS = 100;   // проиграл: 2 кадра подряд с улыбкой или улыбка ≥0,1 с
 const DET_W = 256, DET_MS = 66;   // детектор: кадр 256 px, не чаще 15 раз в секунду — телефон не греется
@@ -328,6 +328,7 @@ async function prepareDevice(){
 }
 
 const detCv = document.createElement('canvas'), detG = detCv.getContext('2d');
+const dbg = {old: 0, jaw: 0, s: 0};   // максимумы для тестов
 // оценка улыбки 0..1 по уменьшенному кадру; null — лица нет; undefined — кадра нет
 function detectRaw(v){
   if (!landmarker || v.readyState < 2 || !v.videoWidth) return undefined;
@@ -337,9 +338,12 @@ function detectRaw(v){
   const r = landmarker.detectForVideo(detCv, performance.now()), bs = r.faceBlendshapes && r.faceBlendshapes[0];
   faceLm = r.faceLandmarks && r.faceLandmarks[0] || null;
   if (!bs) return null;
-  let l = 0, rr = 0;
-  for (const c of bs.categories){ if (c.categoryName === 'mouthSmileLeft') l = c.score; if (c.categoryName === 'mouthSmileRight') rr = c.score; }
-  return Math.max(l, rr);
+  const b = {};
+  for (const c of bs.categories) b[c.categoryName] = c.score;
+  // открытый рот («а-а», зевок, разговор) тоже поднимает mouthSmile — вычитаем раскрытую челюсть и вытянутые губы
+  const smile = ((b.mouthSmileLeft || 0) + (b.mouthSmileRight || 0)) / 2;
+  dbg.old = Math.max(dbg.old, b.mouthSmileLeft || 0, b.mouthSmileRight || 0); dbg.jaw = Math.max(dbg.jaw, b.jawOpen || 0);
+  return Math.max(0, smile - 0.8 * Math.max(0, (b.jawOpen || 0) - 0.3) - Math.max(0, (b.mouthFunnel || 0) - 0.08) - Math.max(0, (b.mouthPucker || 0) - 0.15));
 }
 
 function snapshot(){
@@ -364,6 +368,7 @@ function loop(){
   if (!play) return;
   if (s !== null) $('meter').style.width = Math.min(100, s*100) + '%';
   if (phase !== 'run') return;
+  if (s !== null) dbg.s = Math.max(dbg.s, s);
   if (s === null){
     if (!noFaceSince) noFaceSince = now;
     const gone = now - noFaceSince;
@@ -676,7 +681,7 @@ setInterval(() => { if (room && relayUrl && (!rws || rwsRoom !== room)) relayCon
 // ---------- видео всех игроков (как FaceTime) ----------
 // Сначала каждый звонит каждому напрямую. Если гость↔гость не соединились за 3 с (сотовый NAT),
 // гость просит создателя переслать ему видео этого игрока: с создателем связь есть у всех.
-window.__nu = {get relay(){ return !!(rws && rws.readyState === 1); }, get fps(){ return detFps; }, out: () => outCv ? outCv.toDataURL('image/png') : '', mask: id => setMask(id)};   // для тестов
+window.__nu = {dbg, get relay(){ return !!(rws && rws.readyState === 1); }, get fps(){ return detFps; }, out: () => outCv ? outCv.toDataURL('image/png') : '', mask: id => setMask(id)};   // для тестов
 const NOMESH = new URLSearchParams(location.search).has('nomesh');   // для теста запасного пути
 const remote = new Map();    // id -> MediaStream, пришедший напрямую
 const relays = new Map();    // гость: id -> звонок-пересылка; создатель: 'гость|id' -> звонок
