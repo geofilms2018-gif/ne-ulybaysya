@@ -402,9 +402,10 @@ function netOpen(code, willKey, will){
     for (const url of BROKERS){
       const c = mqtt.connect(url, {clientId: 'nu_' + myId + '_' + rid().slice(0, 4), keepalive: 20, reconnectPeriod: 2000, connectTimeout: 8000,
         will: {topic: topic(willKey), payload: JSON.stringify(will), qos: 1}});
-      c.on('connect', () => c.subscribe({[topic('h')]: {qos: 1}, [topic('all')]: {qos: 1}, [topic('x')]: {qos: 0}}, err => { if (!err && !up){ up = true; clearTimeout(to); resolve(); } }));
+      c.on('connect', () => c.subscribe({[topic('h')]: {qos: 1}, [topic('all')]: {qos: 1}, [topic('x')]: {qos: 0}, [RELAY_T]: {qos: 1}}, err => { if (!err && !up){ up = true; clearTimeout(to); resolve(); } }));
       c.on('message', (t, buf) => {
         let m; try { m = JSON.parse(buf.toString()); } catch(e){ return; }
+        if (t === RELAY_T){ relayAnnounce(m); return; }
         if (!m || !m.mid || seen.has(m.mid)) return;
         seen.add(m.mid); seenQ.push(m.mid); if (seenQ.length > 1000) seen.delete(seenQ.shift());
         route(t.endsWith('/h') ? 'h' : t.endsWith('/x') ? 'x' : 'all', m);
@@ -610,7 +611,7 @@ function redial(){
 
 // ---------- запасное видео: если WebRTC не встал (сотовый NAT, нет TURN), кадры 160 px идут через MQTT ----------
 const NORTC = new URLSearchParams(location.search).has('nortc');   // тест «как на сотовой»: WebRTC без связи вообще
-const FB_MS = 250, fbCv = document.createElement('canvas'), fbG = fbCv.getContext('2d');
+const FB_MS = 250, RL_MS = 100, fbCv = document.createElement('canvas'), fbG = fbCv.getContext('2d');
 let needMe = 0, lastFb = 0;
 const needAt = new Map(), firstSeen = new Map();
 function frameNet(m){
@@ -622,11 +623,15 @@ function frameNet(m){
 }
 function fallbackTick(){
   if (!room || !stream) return;
-  const now = Date.now();
-  // кому-то нужны мои кадры — шлём ~4 в секунду
-  if (now - needMe < 7000 && now - lastFb >= FB_MS){
-    const v = maskId && outCv ? outCv : $('cam'), w = 160, vw = v.videoWidth || v.width, vh = v.videoHeight || v.height;
-    if (vw){ lastFb = now; fbCv.width = w; fbCv.height = Math.round(w * vh / vw); fbG.drawImage(v, 0, 0, fbCv.width, fbCv.height); pub('x', {type:'fr', d: fbCv.toDataURL('image/jpeg', 0.55)}, 0); }
+  const now = Date.now(), viaRelay = rws && rws.readyState === 1;
+  // кому-то нужны мои кадры: через ретранслятор 320 px ~10 в секунду, иначе через MQTT 160 px ~4 в секунду
+  if (now - needMe < 7000 && now - lastFb >= (viaRelay ? RL_MS : FB_MS) && !(viaRelay && rws.bufferedAmount > 200000)){
+    const v = maskId && outCv ? outCv : $('cam'), w = viaRelay ? 320 : 160, vw = v.videoWidth || v.width, vh = v.videoHeight || v.height;
+    if (vw){
+      lastFb = now; fbCv.width = w; fbCv.height = Math.round(w * vh / vw); fbG.drawImage(v, 0, 0, fbCv.width, fbCv.height);
+      const d = fbCv.toDataURL('image/jpeg', viaRelay ? 0.6 : 0.55);
+      if (viaRelay) rws.send(JSON.stringify({type:'fr', d})); else pub('x', {type:'fr', d}, 0);
+    }
   }
   // у кого-то нет видео дольше 4 с — просим кадры
   for (const r of roster){
@@ -638,12 +643,40 @@ function fallbackTick(){
     needAt.set(r.id, now); pub('x', {type:'need', of: r.id}, 0);
   }
 }
-setInterval(fallbackTick, FB_MS);
+setInterval(fallbackTick, RL_MS);
+
+// ---------- ретранслятор на Маке (cloudflared): адрес приходит в MQTT с подписью, чужой адрес не примем ----------
+const RELAY_T = 'ne-ulybaysya/v2/relay';
+const RELAY_PUB = 'BKTVMUBck3+IEF6vEBVy7G+n4u+cWRLr8ZqwWOp53QzzsUgiyc1isSwdSN9mQ4DI8mGdWppTITWB89lkhWKf1AQ=';
+const NORELAY = new URLSearchParams(location.search).has('norelay');   // тест: как будто ретранслятора нет
+let relayUrl = '', rws = null, rwsRoom = '', relayKey = null;
+const b64 = x => Uint8Array.from(atob(x), c => c.charCodeAt(0));
+async function relayAnnounce(m){
+  try {
+    if (NORELAY || !m || typeof m.url !== 'string' || !/^wss:\/\/[a-z0-9-]+\.trycloudflare\.com$/.test(m.url)) return;
+    const age = Date.now() / 1000 - m.t; if (!(age < 86400 && age > -600)) return;
+    relayKey = relayKey || await crypto.subtle.importKey('raw', b64(RELAY_PUB), {name: 'ECDSA', namedCurve: 'P-256'}, false, ['verify']);
+    const ok = await crypto.subtle.verify({name: 'ECDSA', hash: 'SHA-256'}, relayKey, b64(m.sig), new TextEncoder().encode(m.url + '|' + m.t));
+    if (!ok || m.url === relayUrl) return;
+    relayUrl = m.url; relayConnect();
+  } catch(e){}
+}
+function relayConnect(){
+  if (!relayUrl || !room) return;
+  if (rws && rwsRoom === room && rws.readyState <= 1 && rws.url.startsWith(relayUrl)) return;
+  try { if (rws) rws.close(); } catch(e){}
+  rwsRoom = room;
+  const ws = rws = new WebSocket(relayUrl + '/?room=' + room + '&id=' + myId);
+  ws.onmessage = ev => { let m; try { m = JSON.parse(ev.data); } catch(e){ return; } if (m && m.from && m.from !== myId) frameNet(m); };
+  ws.onclose = () => { if (rws === ws){ rws = null; setTimeout(relayConnect, 3000); } };
+  ws.onerror = () => {};
+}
+setInterval(() => { if (room && relayUrl && (!rws || rwsRoom !== room)) relayConnect(); }, 2000);
 
 // ---------- видео всех игроков (как FaceTime) ----------
 // Сначала каждый звонит каждому напрямую. Если гость↔гость не соединились за 3 с (сотовый NAT),
 // гость просит создателя переслать ему видео этого игрока: с создателем связь есть у всех.
-window.__nu = {get fps(){ return detFps; }, out: () => outCv ? outCv.toDataURL('image/png') : '', mask: id => setMask(id)};   // для тестов
+window.__nu = {get relay(){ return !!(rws && rws.readyState === 1); }, get fps(){ return detFps; }, out: () => outCv ? outCv.toDataURL('image/png') : '', mask: id => setMask(id)};   // для тестов
 const NOMESH = new URLSearchParams(location.search).has('nomesh');   // для теста запасного пути
 const remote = new Map();    // id -> MediaStream, пришедший напрямую
 const relays = new Map();    // гость: id -> звонок-пересылка; создатель: 'гость|id' -> звонок
