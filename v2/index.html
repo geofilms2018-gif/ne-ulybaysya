@@ -192,8 +192,8 @@ import {MASKS, faceFrame, previewFrame, drawMask} from "../maski.js";
 
 const $ = id => document.getElementById(id);
 const PREFIX = 'ne-ulybaysya-v2-';   // id для видео (WebRTC)
-const SMILE_MIN = 0.5;       // минимальный порог улыбки (оценка уже без открытого рта)
-const SMILE_OVER = 0.25;     // насколько выше спокойного лица
+const SMILE_MIN = 0.25;      // порог улыбки (оценка уже без открытого рта); подобран по фото Гео: «чуть улыбка» = 0,32
+const SMILE_OVER = 0.2;      // насколько выше спокойного лица
 const SMILE_FRAMES = 2, SMILE_HOLD_MS = 100;   // проиграл: 2 кадра подряд с улыбкой или улыбка ≥0,1 с
 const DET_W = 256, DET_MS = 66;   // детектор: кадр 256 px, не чаще 15 раз в секунду — телефон не греется
 const NOFACE_WARN_MS = 1000, NOFACE_LOSE_MS = 2500; // спрятал лицо = проиграл
@@ -345,7 +345,7 @@ function detectRaw(v){
   // открытый рот («а-а», зевок, разговор) тоже поднимает mouthSmile — вычитаем раскрытую челюсть и вытянутые губы
   const smile = ((b.mouthSmileLeft || 0) + (b.mouthSmileRight || 0)) / 2;
   dbg.old = Math.max(dbg.old, b.mouthSmileLeft || 0, b.mouthSmileRight || 0); dbg.jaw = Math.max(dbg.jaw, b.jawOpen || 0);
-  return Math.max(0, smile - 0.8 * Math.max(0, (b.jawOpen || 0) - 0.3) - Math.max(0, (b.mouthFunnel || 0) - 0.08) - Math.max(0, (b.mouthPucker || 0) - 0.15));
+  return Math.max(0, smile - 1.2 * Math.max(0, (b.jawOpen || 0) - 0.2) - 2 * Math.max(0, (b.mouthFunnel || 0) - 0.08) - Math.max(0, (b.mouthPucker || 0) - 0.15));
 }
 
 function snapshot(){
