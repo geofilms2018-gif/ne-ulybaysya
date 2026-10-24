@@ -991,7 +991,7 @@ function guard(fn){ return async () => {
 
 // ---------- Telegram Mini App: без сервера и без токена бота ----------
 // Ссылка-приглашение: t.me/<TG_BOT>/<TG_APP>?startapp=КОД. Пока бот не заведён (пусто) — зовём обычной ссылкой на сайт.
-const TG_BOT = 'bigame_official_bot', TG_APP = 'ulybka';
+const TG_BOT = 'bigame_official_bot', TG_APP = '';   // TG_APP = 'ulybka', когда Гео сделает /newapp — тогда заработает ?startapp=КОД
 const TG = window.Telegram && Telegram.WebApp && Telegram.WebApp.initData ? Telegram.WebApp : null;
 if (TG){
   try {
@@ -1004,6 +1004,7 @@ if (TG){
 const TG_START = TG && TG.initDataUnsafe && TG.initDataUnsafe.start_param || '';
 const INVITE = (new URLSearchParams(location.search).get('r') || TG_START || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4);
 try { $('name').value = localStorage.getItem('nu_name') || ''; } catch(e){}
+if (!$('name').value) $('name').value = (new URLSearchParams(location.search).get('n') || '').slice(0, 14);
 if (!$('name').value && TG && TG.initDataUnsafe && TG.initDataUnsafe.user) $('name').value = String(TG.initDataUnsafe.user.first_name || '').slice(0, 14);
 if (INVITE.length === 4){
   $('code').value = INVITE;
@@ -1013,6 +1014,10 @@ if (INVITE.length === 4){
 $('btnPlay').onclick = guard(createRoom);
 $('btnInvite').onclick = async () => {
   const code = $('roomCode').textContent, text = 'Го в эфир, кто первый улыбнётся — проиграл 😐';
+  if (TG && !TG_APP){   // пока нет /newapp: зовём в бота и даём код
+    const t = 'Го в эфир «Не улыбайся» 😐 Открой @' + TG_BOT + ' → «Играть» → код ' + code;
+    TG.openTelegramLink('https://t.me/share/url?url=' + encodeURIComponent('https://t.me/' + TG_BOT) + '&text=' + encodeURIComponent(t)); return;
+  }
   const url = TG_BOT && TG_APP ? 'https://t.me/' + TG_BOT + '/' + TG_APP + '?startapp=' + code : location.origin + location.pathname + '?r=' + code;
   if (TG){ TG.openTelegramLink('https://t.me/share/url?url=' + encodeURIComponent(url) + '&text=' + encodeURIComponent(text)); return; }
   try { if (navigator.share){ await navigator.share({title: 'Не улыбайся', text, url}); return; } } catch(e){ return; }
@@ -1025,7 +1030,10 @@ $('btnMic').onclick = toggleMic; $('meMic').onclick = toggleMic;
 // Телеграм не дал камеру — открываем ту же комнату в обычном браузере
 $('btnBrowser').onclick = () => {
   const code = ($('code').value.trim() || INVITE).toUpperCase();
-  const url = location.origin + location.pathname + (/^[A-Z]{4}$/.test(code) ? '?r=' + code : '');
+  const name = $('name').value.trim(), q = new URLSearchParams();
+  if (/^[A-Z]{4}$/.test(code)) q.set('r', code);
+  if (name) q.set('n', name);   // имя переносим в браузер вместе с кодом
+  const url = location.origin + location.pathname + (q.toString() ? '?' + q : '');
   if (TG) TG.openLink(url); else location.href = url;
 };
 function smallShot(v){
