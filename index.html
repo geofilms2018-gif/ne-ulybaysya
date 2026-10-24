@@ -75,6 +75,8 @@
   .tile.live .ph,.tile.fbon .ph{display:none}
   .tile img.fb{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1);display:none}
   .tile.fbon:not(.live) img.fb{display:block}
+  .tile .na{position:absolute;left:10px;top:10px;z-index:2;display:none;font-size:12px;background:#000a;padding:3px 7px;border-radius:9px}
+  body.voice .tile.noaud .na{display:block}
   .mic{position:absolute;right:8px;bottom:8px;z-index:2;display:none;width:38px;height:38px;padding:0;border-radius:50%;font-size:18px;background:#000a;border:0;color:#fff}
   body.voice .mic{display:block}
   .modes{display:flex;gap:8px;width:100%;max-width:340px}
@@ -621,6 +623,8 @@ let needMe = 0, lastFb = 0;
 const needAt = new Map(), firstSeen = new Map();
 function frameNet(m){
   if (m.type === 'need' && m.of === myId) needMe = Date.now();
+  if (m.type === 'needA' && m.of === myId) needAMe = Date.now();
+  if (m.type === 'pcm') playPcm(m.from, m.d);
   if (m.type === 'fr' && typeof m.d === 'string' && m.d.startsWith('data:image/jpeg')){
     const t = tileOf(m.from); if (!t || t.classList.contains('live')) return;
     t.querySelector('img.fb').src = m.d; t.classList.add('fbon'); t._fb = Date.now();
@@ -647,6 +651,52 @@ function fallbackTick(){
     if ((t && t.classList.contains('live')) || now - firstSeen.get(r.id) < 4000 || now - (needAt.get(r.id) || 0) < 3000) continue;
     needAt.set(r.id, now); pub('x', {type:'need', of: r.id}, 0);
   }
+  // голос: нет живого WebRTC-звука от игрока — просим его голос через ретранслятор
+  if (voice) for (const r of roster){
+    if (r.id === myId) continue;
+    const t = tileOf(r.id), rtc = audioFlowing(r.id), pcm = now - (pcmLast.get(r.id) || 0) < 2000;
+    if (t) t.classList.toggle('noaud', !rtc && !pcm && now - firstSeen.get(r.id) > 5000);
+    if (rtc || now - firstSeen.get(r.id) < 3000 || now - (needAAt.get(r.id) || 0) < 2500) continue;
+    needAAt.set(r.id, now); pub('x', {type:'needA', of: r.id}, 0);
+  }
+}
+
+// ---------- голос через ретранслятор: PCM 16 кГц кусками ~85 мс, на приёме буфер ~120 мс ----------
+const PCM_RATE = 16000;
+let needAMe = 0, pcmNode = null, pcmSrc = null, pcmMic = null;
+const needAAt = new Map(), pcmLast = new Map(), pcmNext = new Map();
+function audioFlowing(id){
+  const t = tileOf(id); if (!t || !t.classList.contains('live')) return false;
+  const st = t.querySelector('video').srcObject;
+  return !!st && st.getAudioTracks().some(a => a.readyState === 'live' && !a.muted);
+}
+function pcmSend(){
+  if (!actx || !voice || !mic){ if (pcmNode){ try { pcmSrc.disconnect(); pcmNode.disconnect(); } catch(e){} pcmNode = pcmSrc = pcmMic = null; } return; }
+  if (pcmNode && pcmMic === mic) return;
+  if (pcmNode) try { pcmSrc.disconnect(); pcmNode.disconnect(); } catch(e){}
+  pcmMic = mic; pcmSrc = actx.createMediaStreamSource(mic); pcmNode = actx.createScriptProcessor(4096, 1, 1);
+  const mute = actx.createGain(); mute.gain.value = 0;
+  pcmNode.onaudioprocess = ev => {
+    if (!micOn || !rws || rws.readyState !== 1 || Date.now() - needAMe > 7000 || rws.bufferedAmount > 200000) return;
+    const inp = ev.inputBuffer.getChannelData(0), k = actx.sampleRate / PCM_RATE, n = Math.floor(inp.length / k), out = new Int16Array(n);
+    for (let i = 0; i < n; i++){ const x = inp[Math.floor(i * k)]; out[i] = Math.max(-1, Math.min(1, x)) * 32767; }
+    let bin = ''; const u8 = new Uint8Array(out.buffer); for (let i = 0; i < u8.length; i++) bin += String.fromCharCode(u8[i]);
+    rws.send(JSON.stringify({type:'pcm', d: btoa(bin)}));
+  };
+  pcmSrc.connect(pcmNode); pcmNode.connect(mute); mute.connect(actx.destination);
+}
+setInterval(pcmSend, 1000);
+function playPcm(id, d){
+  if (!voice || !actx || typeof d !== 'string' || audioFlowing(id)) return;
+  const t = tileOf(id); if (t && t.dataset.mute) return;
+  let u8; try { u8 = Uint8Array.from(atob(d), c => c.charCodeAt(0)); } catch(e){ return; }
+  const i16 = new Int16Array(u8.buffer, 0, u8.length >> 1); if (!i16.length) return;
+  const buf = actx.createBuffer(1, i16.length, PCM_RATE), ch = buf.getChannelData(0);
+  for (let i = 0; i < i16.length; i++) ch[i] = i16[i] / 32768;
+  const now = actx.currentTime; let at = pcmNext.get(id) || 0;
+  if (at < now + 0.05 || at > now + 0.6) at = now + 0.12;   // джиттер-буфер: отстали или убежали — встаём заново
+  const src = actx.createBufferSource(); src.buffer = buf; src.connect(actx.destination); src.start(at);
+  pcmNext.set(id, at + buf.duration); pcmLast.set(id, Date.now());
 }
 setInterval(fallbackTick, RL_MS);
 
@@ -681,7 +731,7 @@ setInterval(() => { if (room && relayUrl && (!rws || rwsRoom !== room)) relayCon
 // ---------- видео всех игроков (как FaceTime) ----------
 // Сначала каждый звонит каждому напрямую. Если гость↔гость не соединились за 3 с (сотовый NAT),
 // гость просит создателя переслать ему видео этого игрока: с создателем связь есть у всех.
-window.__nu = {dbg, get relay(){ return !!(rws && rws.readyState === 1); }, get fps(){ return detFps; }, out: () => outCv ? outCv.toDataURL('image/png') : '', mask: id => setMask(id)};   // для тестов
+window.__nu = {dbg, aud: () => roster.filter(r => r.id !== myId).map(r => audioFlowing(r.id) ? 'rtc' : Date.now() - (pcmLast.get(r.id) || 0) < 3000 ? 'pcm' : 0), get relay(){ return !!(rws && rws.readyState === 1); }, get fps(){ return detFps; }, out: () => outCv ? outCv.toDataURL('image/png') : '', mask: id => setMask(id)};   // для тестов
 const NOMESH = new URLSearchParams(location.search).has('nomesh');   // для теста запасного пути
 const remote = new Map();    // id -> MediaStream, пришедший напрямую
 const relays = new Map();    // гость: id -> звонок-пересылка; создатель: 'гость|id' -> звонок
@@ -694,7 +744,7 @@ function ensureTile(id){
   let t = tileOf(id);
   if (!t){
     t = document.createElement('div'); t.className = 'tile'; t.dataset.id = id;
-    t.innerHTML = '<video playsinline autoplay muted></video><div class="ph"><div class="ring"><b></b></div><small>подключаю видео…</small></div><img class="fb" alt=""><span class="tname"></span><button class="mic">🔊</button>';
+    t.innerHTML = '<video playsinline autoplay muted></video><div class="ph"><div class="ring"><b></b></div><small>подключаю видео…</small></div><img class="fb" alt=""><span class="na">🔇 нет звука</span><span class="tname"></span><button class="mic">🔊</button>';
     const b = t.querySelector('.mic'), v = t.querySelector('video');
     b.onclick = ev => { ev.stopPropagation(); t.dataset.mute = t.dataset.mute ? '' : '1'; applyAudio(t); };
     $('grid').appendChild(t);
