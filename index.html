@@ -393,7 +393,7 @@ function pub(k, msg){
 function toHost(msg){ pub('h', msg); }
 function broadcast(msg){ pub('all', msg); handle(msg); }
 function sendLobby(){ broadcast({type:'lobby', players: lobbyList(), ph: phase}); }
-function lobbyList(){ return [...players.entries()].map(([id, p]) => ({id, name: p.name, avatar: p.avatar || '', ready: !!p.ready, loss: p.loss || 0})); }
+function lobbyList(){ return [...players.entries()].map(([id, p]) => ({id, name: p.name, avatar: p.avatar || '', ready: !!p.ready, loss: p.loss || 0, v: !!p.v})); }
 function route(k, m){
   if (!m.from || m.from === myId) return;
   if (k === 'h'){ if (isHost) hostNet(m); return; }
@@ -407,7 +407,7 @@ function promote(){
   const old = hostId;
   isHost = true; ep++; hostId = myId; inRoom = true;
   players.clear();
-  for (const r of roster) if (r.id !== old) players.set(r.id, r.id === myId ? {name: myName, avatar: myAvatar, ready: myReady, loss: r.loss || 0, seen: Infinity} : {name: r.name, avatar: r.avatar, ready: r.ready, loss: r.loss || 0, seen: Date.now()});
+  for (const r of roster) if (r.id !== old) players.set(r.id, r.id === myId ? {name: myName, avatar: myAvatar, ready: myReady, loss: r.loss || 0, v: vidUp(), seen: Infinity} : {name: r.name, avatar: r.avatar, ready: r.ready, loss: r.loss || 0, v: r.v, seen: Date.now()});
   if (!players.has(myId)) players.set(myId, {name: myName, avatar: myAvatar, ready: myReady, loss: 0, seen: Infinity});
   if (phase === 'run'){ hostStart = t0; loserTaken = false; cands = []; }
   $('btnStart').style.display = 'block'; $('btnInvite').style.display = 'block';
@@ -430,7 +430,7 @@ function hostNet(m){
   const p = players.get(id);
   if (m.type === 'hello'){
     if (p && phase === 'done' && lastLoser) pub('all', {...lastLoser, type:'loser', to: id});
-    players.set(id, {name: String(m.name || '?').slice(0, 14), avatar: p ? p.avatar : '', ready: p ? p.ready : false, loss: p ? p.loss : 0, seen: Date.now()});
+    players.set(id, {name: String(m.name || '?').slice(0, 14), avatar: p ? p.avatar : '', ready: p ? p.ready : false, loss: p ? p.loss : 0, v: !!m.v || !!(p && p.v), seen: Date.now()});
     sendLobby();
     if (!p) broadcast({type:'feed', name: String(m.name || '?').slice(0, 14), text:'присоединился(-ась) к эфиру'});
     return;
@@ -441,13 +441,14 @@ function hostNet(m){
   if (m.type === 'react') broadcast({type:'react', e: String(m.e).slice(0, 4), by: id});
   if (m.type === 'smile') hostGotSmile(id, p.name, m.photo, m.ms, m.why);
   if (m.type === 'relay') hostRelay(id, String(m.of));
+  if (m.type === 'vid' && !p.v){ p.v = true; sendLobby(); }
   if (m.type === 'bye'){ players.delete(id); sendLobby(); }
 }
 // гость: слушает создателя
 let joinDone = null;
 function hello(){
   if (Date.now() - lastHello < 1500) return; lastHello = Date.now();
-  toHost({type:'hello', name: myName});
+  toHost({type:'hello', name: myName, v: vidUp()});
   if (myReady) toHost({type:'ready', avatar: myAvatar});
 }
 function guestNet(m){
@@ -482,18 +483,20 @@ setInterval(() => {
     } else if (e.textContent.startsWith('Нет связи')) e.textContent = '';
   }
 }, 3000);
+setInterval(() => { if (room) syncCalls(); }, 1000);   // видео проверяем каждую секунду
 window.addEventListener('pagehide', () => { if (room) pub(isHost ? 'all' : 'h', {type: isHost ? 'gone' : 'bye'}); });
 function avHtml(p){ return p.avatar ? '<img src="' + p.avatar + '" alt="">' : esc(ini(p.name)); }
 function okAvatar(a){ return typeof a === 'string' && a.startsWith('data:image/jpeg') && a.length < 80000 ? a : ''; }
 
 // ---------- видео всех игроков (как FaceTime) ----------
-// Сначала каждый звонит каждому напрямую. Если гость↔гость не соединились за 5 с (сотовый NAT),
+// Сначала каждый звонит каждому напрямую. Если гость↔гость не соединились за 3 с (сотовый NAT),
 // гость просит создателя переслать ему видео этого игрока: с создателем связь есть у всех.
 window.__nu = {get fps(){ return detFps; }};   // для тестов
 const NOMESH = new URLSearchParams(location.search).has('nomesh');   // для теста запасного пути
 const remote = new Map();    // id -> MediaStream, пришедший напрямую
 const relays = new Map();    // гость: id -> звонок-пересылка; создатель: 'гость|id' -> звонок
 const since = new Map(), askedAt = new Map();
+function vidUp(){ return !!(peer && peer.open); }
 let hostId = '';
 function layoutGrid(){ const g = $('grid'); g.className = 'n' + g.children.length; }
 function tileOf(id){ return document.querySelector('.tile[data-id="' + CSS.escape(id) + '"]'); }
@@ -507,7 +510,7 @@ function ensureTile(id){
   const p = roster.find(r => r.id === id);
   if (p){ t.querySelector('.tname').textContent = p.name + (p.loss ? ' · 😂' + p.loss : ''); t.querySelector('.ph b').innerHTML = avHtml(p); }
   const w = since.get(id);
-  t.querySelector('.ph small').textContent = w && Date.now() - w > 8000 ? 'нет связи' : 'подключаю видео…';
+  t.querySelector('.ph small').textContent = w && Date.now() - w > 10000 ? 'нет связи' : 'подключаю видео…';
   return t;
 }
 function setTileStream(id, st){
@@ -537,8 +540,8 @@ function wireCall(c, id){
   if (!c) return;
   capLater(c);
   calls.set(id, c);
-  // нет картинки за 6 с — бросаем звонок, следующий пульс позвонит заново
-  const to = setTimeout(() => { if (calls.get(id) === c){ calls.delete(id); try { c.close(); } catch(e){} } }, 6000);
+  // нет картинки за 8 с — бросаем звонок, следующий пульс позвонит заново
+  const to = setTimeout(() => { if (calls.get(id) === c){ calls.delete(id); try { c.close(); } catch(e){} } }, 8000);
   c.on('stream', st => {
     clearTimeout(to); if (calls.get(id) !== c) return;
     remote.set(id, st); setTileStream(id, st);
@@ -575,7 +578,11 @@ function hostRelay(g, of){
 function startVideo(){
   if (peer && !peer.destroyed) return;
   peer = new Peer(PREFIX + myId);
-  peer.on('open', syncCalls);
+  peer.on('open', () => {   // видео готово — говорим всем, чтобы звонили сразу, а не в пустоту
+    if (isHost){ const p = players.get(myId); if (p){ p.v = true; sendLobby(); } }
+    else toHost({type:'vid'});
+    syncCalls();
+  });
   peer.on('call', onIncomingCall);
   peer.on('disconnected', () => { if (!peer.destroyed) peer.reconnect(); });
   peer.on('error', e => {   // без видео играть всё равно можно
@@ -587,7 +594,7 @@ function startVideo(){
 function syncCalls(){
   const ids = new Set(roster.map(r => r.id));
   for (const id of [...since.keys()]) if (!ids.has(id)) since.delete(id);
-  for (const r of roster) if (r.id !== myId && !since.has(r.id)) since.set(r.id, Date.now());
+  for (const r of roster) if (r.id !== myId && r.v && !since.has(r.id)) since.set(r.id, Date.now());   // с момента, как у него поднялось видео
   for (const t of document.querySelectorAll('.tile:not([data-id="me"])')) if (!ids.has(t.dataset.id)) t.remove();
   for (const r of roster) if (r.id !== myId) ensureTile(r.id);
   layoutGrid();
@@ -596,13 +603,13 @@ function syncCalls(){
   for (const [k, c] of [...relays]) if (!ids.has(isHost ? k.split('|')[0] : k) || (isHost && !ids.has(k.split('|')[1]))){ relays.delete(k); try { c.close(); } catch(e){} }
   // звонит тот, у кого id «меньше», — чтобы двое не звонили друг другу одновременно
   for (const r of roster){
-    if (r.id === myId || calls.has(r.id) || myId > r.id) continue;
+    if (r.id === myId || !r.v || calls.has(r.id) || myId > r.id) continue;
     if (NOMESH && !isHost && r.id !== hostId) continue;
     wireCall(peer.call(PREFIX + r.id, stream), r.id);
   }
   if (!isHost) for (const r of roster){
-    if (r.id === myId || r.id === hostId || remote.has(r.id) || relays.has(r.id)) continue;
-    if (Date.now() - since.get(r.id) < 5000 || Date.now() - (askedAt.get(r.id) || 0) < 6000) continue;
+    if (r.id === myId || r.id === hostId || !since.has(r.id) || remote.has(r.id) || relays.has(r.id)) continue;
+    if (Date.now() - since.get(r.id) < 3000 || Date.now() - (askedAt.get(r.id) || 0) < 4000) continue;
     askedAt.set(r.id, Date.now()); toHost({type:'relay', of: r.id});
   }
 }
@@ -726,7 +733,7 @@ async function createRoom(){
   hostId = myId; ep = 0;
   await netOpen(code, 'all', {type:'gone', mid: rid()});
   players.clear();
-  players.set(myId, {name: myName, avatar: myAvatar, ready: myReady, loss: 0, seen: Infinity});
+  players.set(myId, {name: myName, avatar: myAvatar, ready: myReady, loss: 0, v: vidUp(), seen: Infinity});
   $('roomCode').textContent = code;
   showHostLobby();
   startVideo();
