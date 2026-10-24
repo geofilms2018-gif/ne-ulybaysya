@@ -144,7 +144,7 @@ const players = new Map();   // хост: peerId -> {name, conn}
 let landmarker = null, stream = null;
 let phase = 'idle';          // idle | prep | run | done
 let t0 = 0, baseline = 0, calib = [], smileSince = 0, sentSmile = false, calibOn = false;
-let ema = null, noFaceSince = 0, lastVideoTime = -1, lastScore = null, modelReady = null, wakeLock = null;
+let lastFaceShot = '', lastShotAt = 0, ema = null, noFaceSince = 0, lastVideoTime = -1, lastScore = null, modelReady = null, wakeLock = null;
 
 function ini(n){ return (n||'?').trim().charAt(0).toUpperCase() || '?'; }
 function esc(n){ return String(n).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
@@ -266,10 +266,11 @@ function loop(){
       if (!noFaceSince) noFaceSince = now;
       const gone = now - noFaceSince;
       $('status').textContent = gone > NOFACE_WARN_MS ? '⚠️ Покажи лицо! ' + Math.max(0, (NOFACE_LOSE_MS - gone)/1000).toFixed(1) : 'Лицо не видно';
-      if (!sentSmile && gone > NOFACE_LOSE_MS){ sentSmile = true; reportSmile(snapshot(), 'спрятал(а) лицо'); }
+      if (!sentSmile && gone > NOFACE_LOSE_MS){ sentSmile = true; reportSmile(lastFaceShot || snapshot(), 'спрятал(а) лицо'); }
       smileSince = 0;
     } else {
       noFaceSince = 0;
+      if (now - lastShotAt > 500){ lastShotAt = now; lastFaceShot = snapshot(); }
       $('status').textContent = 'Держись…';
       const thr = Math.max(SMILE_MIN, baseline + SMILE_OVER);
       if (s > thr){
@@ -327,7 +328,8 @@ function startRound(){
   const p = $('prep'); p.style.display = 'flex';
   $('feed').innerHTML = ''; $('livePill').style.visibility = 'hidden'; p.classList.remove('go');
   let n = 3; p.textContent = n;
-  calibOn = false; noFaceSince = 0;
+  calibOn = false; noFaceSince = 0; lastFaceShot = ''; lastShotAt = 0;
+  $('status').textContent = 'Смотри в камеру, сделай серьёзное лицо';
   const iv = setInterval(() => {
     n--;
     if (n > 0){ p.textContent = n; calibOn = true; return; }
