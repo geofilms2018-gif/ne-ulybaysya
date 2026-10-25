@@ -110,6 +110,22 @@
   #prep{position:absolute;inset:0;display:none;align-items:center;justify-content:center;font-size:170px;font-weight:900;z-index:3;text-shadow:0 4px 30px #000}
   #prep.go{background:var(--ig);-webkit-background-clip:text;background-clip:text;color:transparent;text-shadow:none}
   #res{background:radial-gradient(120% 80% at 50% 30%,#3a0a1f 0%,#000 65%)}
+  #intr{display:none;position:absolute;inset:0;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:16px}
+  #intrTitle{font-size:32px;font-weight:900;min-height:40px;text-align:center}
+  #intrTitle.in{animation:spring .6s cubic-bezier(.2,1.6,.4,1)}
+  @keyframes spring{from{transform:translateY(-70px) scale(.3);opacity:0}to{transform:none;opacity:1}}
+  #intrRow{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;max-width:360px}
+  .it{width:150px;text-align:center;transition:transform .5s cubic-bezier(.2,1.6,.4,1),opacity .4s;animation:itIn .55s cubic-bezier(.2,1.6,.4,1) backwards}
+  @keyframes itIn{from{transform:translateY(80px) scale(.5) rotate(-8deg);opacity:0}to{transform:none;opacity:1}}
+  .it .ip{border-radius:18px;padding:3px;background:var(--ig)}
+  .it img{width:100%;display:block;border-radius:15px;border:3px solid #000;background:#222;min-height:60px}
+  .it b{display:block;margin-top:6px;font-size:15px}
+  .it small{display:block;min-height:18px;color:var(--mut);font-size:14px;font-weight:700}
+  .it.win{transform:scale(1.22);z-index:2} .it.win small{color:#ff4d6d}
+  .it.dim{opacity:.55;transform:scale(.92)}
+  #intrNum{font-size:140px;font-weight:900;line-height:1;min-height:140px;background:var(--ig);-webkit-background-clip:text;background-clip:text;color:transparent}
+  #intrNum.pop{animation:numpop .9s cubic-bezier(.2,1.6,.4,1)}
+  @keyframes numpop{0%{transform:scale(2.4);opacity:0}30%{transform:scale(1);opacity:1}100%{transform:scale(.85);opacity:.9}}
   #cd{font-size:210px;font-weight:900;background:var(--ig);-webkit-background-clip:text;background-clip:text;color:transparent}
   #reveal{display:none;flex-direction:column;align-items:center;gap:12px}
   .phring{padding:5px;border-radius:28px;background:var(--ig);transform:rotate(-3deg);animation:pop .5s;box-shadow:0 20px 60px #d6297666}
@@ -179,12 +195,12 @@
 </section>
 
 <section class="scr" id="res">
+  <div id="intr"><div id="intrTitle"></div><div id="intrRow"></div><div id="intrNum"></div></div>
   <div id="cd">5</div>
   <div id="reveal">
     <div class="tag" id="loserWhy"></div>
     <div id="loserName"></div>
     <div class="phring"><img id="loserImg" alt=""></div>
-    <div class="phring" id="ph2" style="display:none;margin-top:-40px;transform:rotate(4deg)"><img id="loserImg2" alt="" style="width:44vw;max-width:200px"></div>
     <div class="tag" id="loserTime"></div>
     <button class="sec" id="btnShare" style="display:none">Поделиться фоткой</button>
     <button class="grad" id="btnAgain" style="display:none">Ещё раз</button>
@@ -289,16 +305,16 @@ function outNode(){
   $('aOut').play().catch(() => {});
   return msDest;
 }
-function play(k){
-  if (actx && bufs[k]){ if (actx.state !== 'running') actx.resume(); const s = actx.createBufferSource(); s.buffer = bufs[k]; s.connect(outNode()); s.start(0); return; }
-  const a = $(k === 'dun' ? 'sDun' : 'sRev'); a.currentTime = 0; a.play().catch(() => {});
+function play(k, from){
+  if (actx && bufs[k]){ if (actx.state !== 'running') actx.resume(); const s = actx.createBufferSource(); s.buffer = bufs[k]; s.connect(outNode()); s.start(0, from || 0); return; }
+  const a = $(k === 'dun' ? 'sDun' : 'sRev'); a.currentTime = from || 0; a.play().catch(() => {});
 }
 
 async function keepAwake(){ try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch(e){} }
 // свернул или ушёл в другое приложение посреди раунда = как пропало лицо; вернулся — тихо в ту же комнату
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden'){
-    if (phase === 'run' && !sentSmile){ sentSmile = true; reportSmile(lastFaceShot || snapshot(), 'ушёл(-ла) из эфира'); }
+    if (phase === 'run' && !sentSmile){ sentSmile = true; reportSmile(lastFaceShot || snapshot(), 'ушёл(-ла) из эфира', clk()); }
     return;
   }
   if (stream) keepAwake();
@@ -410,7 +426,7 @@ function loop(){
     if (!noFaceSince) noFaceSince = now;
     const gone = now - noFaceSince;
     $('status').textContent = gone > NOFACE_WARN_MS ? '⚠️ Покажи лицо! ' + Math.max(0, (NOFACE_LOSE_MS - gone)/1000).toFixed(1) : 'Лицо не видно';
-    if (!sentSmile && gone > NOFACE_LOSE_MS){ sentSmile = true; reportSmile(lastFaceShot || snapshot(), 'спрятал(а) лицо'); }
+    if (!sentSmile && gone > NOFACE_LOSE_MS){ sentSmile = true; reportSmile(lastFaceShot || snapshot(), 'спрятал(а) лицо', now + CLOCK_SKEW); }
     smileFrames = 0; sBuf = [];
     return;
   }
@@ -424,12 +440,25 @@ function loop(){
     if (!smileFrames++) smileSince = now;
     // длительность = от первого кадра с улыбкой до текущего + длина кадра; на слабом телефоне хватает одного кадра (он и так ≥0,15 с)
     const frameMs = Math.min(200, 1000 / (detFps || 12)), need = frameMs >= SMILE_HOLD_MS ? 1 : 2;
-    if (!sentSmile && smileFrames >= need && now - smileSince + frameMs >= SMILE_HOLD_MS){ sentSmile = true; reportSmile(snapshot(), 'первым(-ой) улыбнулся(-ась)'); }
+    if (!sentSmile && smileFrames >= need && now - smileSince + frameMs >= SMILE_HOLD_MS){ sentSmile = true; reportSmile(snapshot(), 'первым(-ой) улыбнулся(-ась)', smileSince + CLOCK_SKEW); }
   } else {
     smileFrames = 0;
     if (now - lastShotAt > 500){ lastShotAt = now; lastFaceShot = snapshot(); }
   }
 }
+
+// ---------- общие часы: у каждого телефона своя шкала, время улыбки сравниваем в шкале ведущего (как NTP: минимальный RTT) ----------
+const CLOCK_SKEW = +(new URLSearchParams(location.search).get('skew')) || 0;   // тест: часы этого телефона убежали на столько мс
+const clk = () => performance.now() + CLOCK_SKEW;
+let clkOff = 0, clkRtt = 0, clkSamples = [];   // clkOff: время ведущего = clk() + clkOff
+function clockPing(n){ for (let i = 0; i < n; i++) setTimeout(() => { if (!isHost && inRoom) toHost({type:'cp', t0: clk()}); }, i * 200); }
+function clockSample(m){
+  const t1 = clk(), rtt = t1 - m.t0; if (!(rtt >= 0 && rtt < 5000) || typeof m.th !== 'number') return;
+  clkSamples.push({off: m.th - (m.t0 + t1) / 2, rtt, at: t1});
+  clkSamples = clkSamples.filter(x => t1 - x.at < 90000).slice(-16);
+  const b = clkSamples.reduce((a, c) => c.rtt < a.rtt ? c : a); clkOff = b.off; clkRtt = b.rtt;
+}
+setInterval(() => { if (!isHost && inRoom) clockPing(4); }, 30000);
 
 // ---------- сеть ----------
 // Игровые сообщения, кадры и голос идут через наш сервер (WebSocket, wss): ему не мешает NAT сотовой сети.
@@ -510,7 +539,7 @@ function promote(){
   players.clear();
   for (const r of roster) if (r.id !== old) players.set(r.id, r.id === myId ? {name: myName, avatar: myAvatar, ready: myReady, loss: r.loss || 0, v: vidUp(), seen: Infinity} : {name: r.name, avatar: r.avatar, ready: r.ready, loss: r.loss || 0, v: r.v, seen: Date.now()});
   if (!players.has(myId)) players.set(myId, {name: myName, avatar: myAvatar, ready: myReady, loss: 0, seen: Infinity});
-  if (phase === 'run'){ hostStart = t0; loserTaken = false; cands = []; }
+  if (phase === 'run'){ hostStart = t0 + CLOCK_SKEW; loserTaken = false; cands = []; }
   $('btnStart').style.display = 'block'; $('btnInvite').style.display = 'block'; $('modes').style.display = 'flex';
   $('lobbyHint').textContent = 'Создатель вышел — теперь ведёшь ты'; $('lobbyErr').textContent = '';
   if (phase === 'done'){ $('btnAgain').style.display = 'block'; $('againHint').textContent = ''; }
@@ -540,8 +569,9 @@ function hostNet(m){
   p.seen = Date.now();
   if (m.type === 'ready'){ p.avatar = okAvatar(m.avatar); p.ready = true; sendLobby(); }
   if (m.type === 'react') broadcast({type:'react', e: String(m.e).slice(0, 4), by: id});
-  if (m.type === 'smile') hostGotSmile(id, p.name, m.photo, m.ms, m.why);
+  if (m.type === 'smile') hostGotSmile(id, p.name, m.photo, m.at, m.why);
   if (m.type === 'relay') hostRelay(id, String(m.of));
+  if (m.type === 'cp' && typeof m.t0 === 'number') pub('all', {type:'cr', to: id, t0: m.t0, th: clk()});
   if (m.type === 'vid' && !p.v){ p.v = true; sendLobby(); }
   if (m.type === 'bye'){ players.delete(id); sendLobby(); }
 }
@@ -554,13 +584,14 @@ function hello(){
 }
 function guestNet(m){
   if (m.to && m.to !== myId) return;
+  if (m.type === 'cr'){ clockSample(m); return; }
   lastHost = Date.now();
-  if (hostId !== m.from){ hostId = m.from; if (inRoom){ lastHello = 0; hello(); } }   // новый ведущий — напоминаем о себе
+  if (hostId !== m.from){ hostId = m.from; clkSamples = []; clkOff = 0; if (inRoom){ lastHello = 0; hello(); clockPing(8); } }   // новый ведущий — напоминаем о себе и сверяем часы
   if (m.type === 'gone'){ lastHost = Date.now() - 9000; $('lobbyErr').textContent = 'Создатель вышел — передаю комнату следующему…'; return; }
   if (m.type === 'lobby'){
     const me = m.players.some(p => p.id === myId);
     if (!me){ hello(); if (!inRoom) return; }
-    else if (!inRoom){ inRoom = true; if (joinDone) joinDone(); }
+    else if (!inRoom){ inRoom = true; clockPing(8); if (joinDone) joinDone(); }
   }
   if (!inRoom) return;
   if (m.type === 'react' && m.by === myId) return;
@@ -827,7 +858,7 @@ setInterval(fallbackTick, RL_MS);
 // ---------- видео всех игроков (как FaceTime) ----------
 // Сначала каждый звонит каждому напрямую. Если гость↔гость не соединились за 3 с (сотовый NAT),
 // гость просит создателя переслать ему видео этого игрока: с создателем связь есть у всех.
-window.__nu = {dbg, duck: reset => { const r = {minDb: +duckMin.toFixed(1), gainDb: +duckDb.toFixed(1), myDb: +myDb.toFixed(1), remDb: +remDb.toFixed(1), active: !!duck}; if (reset) duckMin = 0; return r; }, smileOf, thr: base => Math.max(SMILE_MIN, base + SMILE_OVER), aud: () => roster.filter(r => r.id !== myId).map(r => audioFlowing(r.id) ? 'rtc' : Date.now() - (pcmLast.get(r.id) || 0) < 3000 ? 'pcm' : 0), get srv(){ return srvUp(); }, get fps(){ return detFps; }, out: () => outCv ? outCv.toDataURL('image/png') : '', mask: id => setMask(id)};   // для тестов
+window.__nu = {dbg, decision: () => lastDecision, origin: () => Date.now() - performance.now(), skewMs: CLOCK_SKEW, hostNow: () => clk() + (isHost ? 0 : clkOff), clkInfo: () => ({off: Math.round(clkOff), rtt: Math.round(clkRtt), n: clkSamples.length}), simSmile: tt => reportSmile(snapshot(), 'тест', clk() + (tt - Date.now())), duck: reset => { const r = {minDb: +duckMin.toFixed(1), gainDb: +duckDb.toFixed(1), myDb: +myDb.toFixed(1), remDb: +remDb.toFixed(1), active: !!duck}; if (reset) duckMin = 0; return r; }, smileOf, thr: base => Math.max(SMILE_MIN, base + SMILE_OVER), aud: () => roster.filter(r => r.id !== myId).map(r => audioFlowing(r.id) ? 'rtc' : Date.now() - (pcmLast.get(r.id) || 0) < 3000 ? 'pcm' : 0), get srv(){ return srvUp(); }, get fps(){ return detFps; }, out: () => outCv ? outCv.toDataURL('image/png') : '', mask: id => setMask(id)};   // для тестов
 const NOMESH = new URLSearchParams(location.search).has('nomesh');   // для теста запасного пути
 const remote = new Map();    // id -> MediaStream, пришедший напрямую
 const relays = new Map();    // гость: id -> звонок-пересылка; создатель: 'гость|id' -> звонок
@@ -996,29 +1027,32 @@ function syncCalls(){
   }
 }
 
-function reportSmile(photo, why){
-  const ms = performance.now() - t0;
-  if (isHost) hostGotSmile(myId, myName, photo, ms, why);
-  else toHost({type:'smile', photo, ms, why});
+// onset — момент первого кадра с улыбкой по clk() этого телефона; в сообщении уходит время в шкале ведущего
+function reportSmile(photo, why, onset){
+  const at = (onset == null ? clk() : onset) + (isHost ? 0 : clkOff);
+  if (isHost) hostGotSmile(myId, myName, photo, at, why);
+  else toHost({type:'smile', photo, at, why});
 }
 
-let hostStart = 0, loserTaken = false, cands = [];
-function hostGotSmile(id, name, photo, ms, why){
+// ---------- интрига: после первой улыбки ещё TIE_WINDOW_MS принимаем улыбки остальных; проигрывает тот, кто раньше по общей шкале ----------
+const TIE_WINDOW_MS = 1000;
+let hostStart = 0, loserTaken = false, cands = [], lastDecision = [];
+function hostGotSmile(id, name, photo, at, why){
   if (loserTaken || phase !== 'run') return;
   if (typeof photo !== 'string' || !photo.startsWith('data:image/jpeg')) photo = '';
-  if (!(ms > 0)) ms = performance.now() - hostStart;
+  if (typeof at !== 'number' || !isFinite(at)) at = clk();
   if (cands.some(c => c.id === id)) return;
-  cands.push({id, name, photo, ms, why: why || ''});
+  cands.push({id, name, photo, at, why: why || ''});
   if (cands.length > 1) return;
-  // ждём 600 мс: вдруг чья-то улыбка случилась раньше (по часам его телефона), но дольше ехала по сети
   setTimeout(() => {
     if (loserTaken) return;
     loserTaken = true;
-    const all = cands.slice().sort((a, b) => a.ms - b.ms), lose = all.filter(c => c.ms - all[0].ms < 80);   // разница <80 мс — ничья, проиграли оба
-    for (const c of lose){ const p = players.get(c.id); if (p) p.loss = (p.loss || 0) + 1; }
-    broadcast({type:'loser', name: lose.map(c => c.name).join(' и '), photo: lose[0].photo, photo2: lose[1] ? lose[1].photo : '', ms: lose[0].ms, why: lose[0].why, tie: lose.length > 1});
+    const all = cands.slice().sort((a, b) => a.at - b.at), first = all[0]; lastDecision = all.map(c => ({n: c.name, at: Math.round(c.at - first.at)}));   // разница меньше погрешности — всё равно побеждает меньшее время
+    const p = players.get(first.id); if (p) p.loss = (p.loss || 0) + 1;
+    const intrigue = all.length > 1 ? all.map(c => ({id: c.id, name: c.name, photo: c.photo, dt: Math.round(c.at - first.at)})) : null;
+    broadcast({type:'loser', name: first.name, photo: first.photo, ms: Math.max(1, first.at - hostStart), why: first.why, intrigue});
     sendLobby();
-  }, 600);
+  }, TIE_WINDOW_MS);
 }
 
 // зашёл посреди раунда — смотрит как зритель до следующего
@@ -1068,34 +1102,64 @@ function startRound(){
     if (n > 0){ p.textContent = n; return; }
     if (n === 0){ p.textContent = 'GO'; p.classList.add('go'); pa.className = 'out'; return; }
     clearInterval(iv); p.style.display = 'none'; pa.innerHTML = '';
-    t0 = performance.now(); if (isHost){ hostStart = t0; loserTaken = false; cands = []; }
+    t0 = performance.now(); if (isHost){ hostStart = t0 + CLOCK_SKEW; loserTaken = false; cands = []; }
     phase = 'run'; $('livePill').style.visibility = 'visible';
     feed('эфир', ' начался. Кто первый улыбнётся — проиграл 😐 Тапай по экрану, чтобы рассмешить');
   }, 1000);
 }
 
+// итог: обычный — отсчёт 5…1 и показ; интрига (две и больше улыбок рядом) — стоп-кадры, «Оба улыбнулись», 3-2-1, «кто первый»
+const WORDS = {2: 'Оба улыбнулись', 3: 'Трое улыбнулись', 4: 'Четверо улыбнулись'};
+function revealLoser(m){
+  $('cd').style.display = 'none'; $('cd').classList.remove('shake'); $('intr').style.display = 'none';
+  $('loserName').textContent = m.name;
+  $('loserImg').src = m.photo;
+  $('loserWhy').textContent = '😂 ' + (m.why || 'первым(-ой) улыбнулся(-ась)');
+  $('loserTime').textContent = 'продержался(-ась) ' + fmt(m.ms);
+  $('reveal').style.display = 'flex';
+  $('btnAgain').style.display = isHost ? 'block' : 'none';
+  $('btnShare').style.display = (m.photo && navigator.canShare) ? 'block' : 'none';
+  lastLoser = m;
+  $('againHint').textContent = isHost ? '' : 'Ждём, пока создатель комнаты нажмёт «Ещё раз»';
+  play('rev');
+}
+function showIntrigue(m){
+  const list = m.intrigue.slice(0, 4), n = list.length, el = $('intr');
+  el.style.display = 'flex'; $('intrNum').textContent = ''; $('intrNum').className = '';
+  $('intrTitle').textContent = (WORDS[n] || 'Улыбнулись все') + ' 😏'; $('intrTitle').className = ''; void $('intrTitle').offsetWidth; $('intrTitle').className = 'in';
+  $('intrRow').innerHTML = list.map((p, i) => '<div class="it" data-i="' + i + '" style="animation-delay:' + (0.25 + i * 0.15) + 's"><div class="ip"><img alt="" src="' + (p.photo || '') + '"></div><b>' + esc(p.name) + '</b><small></small></div>').join('');
+  const T = ms => new Promise(r => setTimeout(r, ms));
+  (async () => {
+    await T(2200);
+    $('intrTitle').textContent = 'Кто был первым?'; $('intrTitle').className = ''; void $('intrTitle').offsetWidth; $('intrTitle').className = 'in';
+    play('dun', 2);
+    for (const k of [3, 2, 1]){ $('intrNum').textContent = k; $('intrNum').className = ''; void $('intrNum').offsetWidth; $('intrNum').className = 'pop'; await T(1000); }
+    $('intrNum').textContent = '';
+    const tiles = [...document.querySelectorAll('#intrRow .it')];
+    tiles.forEach((t, i) => {
+      const d = list[i].dt;
+      t.classList.add(i === 0 ? 'win' : 'dim');
+      t.querySelector('small').textContent = i === 0 ? 'проиграл(-а) 😂' : '+' + (d / 1000).toFixed(2).replace('.', ',') + ' с';
+    });
+    $('intrTitle').textContent = '⚡ ' + list[0].name + ' — первый(-ая)'; $('intrTitle').className = ''; void $('intrTitle').offsetWidth; $('intrTitle').className = 'in';
+    play('rev');
+    await T(2400);
+    revealLoser(m);
+  })();
+}
 function showLoser(m){
   phase = 'done';
   show('res');
-  $('reveal').style.display = 'none'; $('cd').style.display = 'block'; $('cd').classList.add('shake');
+  $('reveal').style.display = 'none'; $('intr').style.display = 'none';
+  if (m.intrigue && m.intrigue.length > 1){ $('cd').style.display = 'none'; showIntrigue(m); return; }
+  $('cd').style.display = 'block'; $('cd').classList.add('shake');
   play('dun');
   let n = 5; $('cd').textContent = n;
   const iv = setInterval(() => {
     n--;
     if (n > 0){ $('cd').textContent = n; return; }
     clearInterval(iv);
-    $('cd').style.display = 'none'; $('cd').classList.remove('shake');
-    $('loserName').textContent = m.name;
-    $('loserImg').src = m.photo;
-    $('ph2').style.display = m.photo2 ? 'block' : 'none'; $('loserImg2').src = m.photo2 || '';
-    $('loserWhy').textContent = '😂 ' + (m.tie ? 'улыбнулись одновременно — проиграли оба' : (m.why || 'первым(-ой) улыбнулся(-ась)'));
-    $('loserTime').textContent = 'продержался(-ась) ' + fmt(m.ms);
-    $('reveal').style.display = 'flex';
-    $('btnAgain').style.display = isHost ? 'block' : 'none';
-    $('btnShare').style.display = (m.photo && navigator.canShare) ? 'block' : 'none';
-    lastLoser = m;
-    $('againHint').textContent = isHost ? '' : 'Ждём, пока создатель комнаты нажмёт «Ещё раз»';
-    play('rev');
+    revealLoser(m);
   }, 1000);
 }
 
