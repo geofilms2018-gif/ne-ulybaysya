@@ -284,6 +284,7 @@ const PREFIX = 'ne-ulybaysya-v2-';   // id для видео (WebRTC)
 const SMILE_MIN = 2.1;       // порог улыбки
 const SMILE_OVER = 2.0;      // насколько выше своего спокойного лица (для тех, у кого уголки рта приподняты и без улыбки)
 const SMILE_BOTH = 0.3;      // оба уголка рта подняты хотя бы на столько — ухмылка одним уголком не считается
+const SMILE_LAUGH = 0.45;    // смех: оба уголка ≥0,45 и видны верхние зубы — улыбка при любом счёте (прищур и открытый рот её не гасят)
 const SMILE_HOLD_MS = 150;   // улыбка держится 0,15 с подряд (по медиане 3 кадров) — проиграл
 const DET_W = 256, DET_MS = 66;   // детектор: кадр 256 px, не чаще 15 раз в секунду — телефон не греется
 const NOFACE_WARN_MS = 1000, NOFACE_LOSE_MS = 2500; // спрятал лицо = проиграл
@@ -295,7 +296,7 @@ let landmarker = null, stream = null;
 let phase = 'idle';          // idle | prep | run | done
 let t0 = 0, baseline = -9, smileSince = 0, sentSmile = false;
 let myAvatar = '', myReady = false, roster = [], calls = new Map();
-let lastFaceShot = '', lastShotAt = 0, smileFrames = 0, corners = 0, sBuf = [], lastDet = 0, detFps = 0, noFaceSince = 0, lastVideoTime = -1, lastScore = null, modelReady = null, wakeLock = null;
+let lastFaceShot = '', lastShotAt = 0, smileFrames = 0, corners = 0, laugh = false, sBuf = [], lastDet = 0, detFps = 0, noFaceSince = 0, lastVideoTime = -1, lastScore = null, modelReady = null, wakeLock = null;
 
 function ini(n){ return (n||'?').trim().charAt(0).toUpperCase() || '?'; }
 function esc(n){ return String(n).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
@@ -452,11 +453,16 @@ function detectRaw(v){
   for (const c of bs.categories) b[c.categoryName] = c.score;
   dbg.old = Math.max(dbg.old, b.mouthSmileLeft || 0, b.mouthSmileRight || 0); dbg.jaw = Math.max(dbg.jaw, b.jawOpen || 0);
   corners = Math.min(b.mouthSmileLeft || 0, b.mouthSmileRight || 0);
+  laugh = isLaugh(b);
   return smileOf(b);
 }
 // оценка улыбки по блендшейпам — одна на игру и на тесты (__nu.smileOf)
 // открытый рот («а-а», зевок, разговор) тоже поднимает mouthSmile — вычитаем раскрытую челюсть и вытянутые губы
 // плюс прищур, ямочки, растяжка губ; минус нахмуренные брови и сжатые губы — веса обучены на GENKI-4K
+// широкая улыбка/смех: GENKI-4K пропуски 15,3% → 13,4%, ложные 1,9% → 2,3%; рот «а» и зевок (челюсть ≥0,6) не считаются
+function isLaugh(b){
+  return Math.min(b.mouthSmileLeft || 0, b.mouthSmileRight || 0) >= SMILE_LAUGH && ((b.mouthUpperUpLeft || 0) + (b.mouthUpperUpRight || 0)) / 2 >= 0.15 && (b.jawOpen || 0) < 0.6;
+}
 function smileOf(b){
   const v = k => ((b[k + 'Left'] || 0) + (b[k + 'Right'] || 0)) / 2;
   const mouth = Math.max(0, v('mouthSmile') - 1.2 * Math.max(0, (b.jawOpen || 0) - 0.2) - 2 * Math.max(0, (b.mouthFunnel || 0) - 0.08) - Math.max(0, (b.mouthPucker || 0) - 0.15));
@@ -500,7 +506,7 @@ function loop(){
   sBuf.push(s); if (sBuf.length > 3) sBuf.shift();
   // сглаживание от одиночных выбросов: при ≥10 кадров/с — медиана 3 кадров, на слабом телефоне (5–8 кадров/с) — худший из двух
   const sorted = sBuf.slice().sort((a, b) => a - b), med = detFps >= 10 ? sorted[sorted.length >> 1] : Math.min(...sBuf.slice(-2));
-  if (med > thr && corners >= SMILE_BOTH){
+  if ((med > thr && corners >= SMILE_BOTH) || laugh){
     if (!smileFrames++) smileSince = now;
     // длительность = от первого кадра с улыбкой до текущего + длина кадра; на слабом телефоне хватает одного кадра (он и так ≥0,15 с)
     const frameMs = Math.min(200, 1000 / (detFps || 12)), need = frameMs >= SMILE_HOLD_MS ? 1 : 2;
@@ -963,7 +969,7 @@ setInterval(fallbackTick, RL_MS);
 // ---------- видео всех игроков (как FaceTime) ----------
 // Сначала каждый звонит каждому напрямую. Если гость↔гость не соединились за 3 с (сотовый NAT),
 // гость просит создателя переслать ему видео этого игрока: с создателем связь есть у всех.
-window.__nu = {dbg, decision: () => lastDecision, origin: () => Date.now() - performance.now(), skewMs: CLOCK_SKEW, hostNow: () => clk() + (isHost ? 0 : clkOff), clkInfo: () => ({off: Math.round(clkOff), rtt: Math.round(clkRtt), n: clkSamples.length}), simSmile: tt => reportSmile(snapshot(), 'тест', clk() + (tt - Date.now())), duck: reset => { const r = {minDb: +duckMin.toFixed(1), gainDb: +duckDb.toFixed(1), myDb: +myDb.toFixed(1), remDb: +remDb.toFixed(1), active: !!duck}; if (reset) duckMin = 0; return r; }, smileOf, thr: base => Math.max(SMILE_MIN, base + SMILE_OVER), aud: () => roster.filter(r => r.id !== myId).map(r => audioFlowing(r.id) ? 'rtc' : Date.now() - (pcmLast.get(r.id) || 0) < 3000 ? 'pcm' : 0), get srv(){ return srvUp(); }, get fps(){ return detFps; }, out: () => outCv ? outCv.toDataURL('image/png') : '', mask: id => setMask(id), recDraw: () => { const g = document.createElement('canvas').getContext('2d'); g.canvas.width = g.canvas.height = 200; const ok = recDrawCover(g, $('cam'), 0, 0, 200, 200, true); return [ok, ...g.getImageData(100, 100, 1, 1).data, $('cam').videoWidth, $('cam').currentTime]; }, recDbg: () => { const c = $('cam'), t = document.querySelector('.tile[data-id="me"]'); return {w: c.videoWidth, rs: c.readyState, p: c.paused, disp: getComputedStyle(c).display, rect: recRects.map(r => [r.t.dataset.id, Math.round(r.x), Math.round(r.y), Math.round(r.w), Math.round(r.h)]), px: rec ? [...rec.g.getImageData(100, 100, 1, 1).data] : null, mask: maskId, out: !!outCv}; }, recInfo: () => rec ? {bytes: rec.bytes, n: rec.chunks.length, st: rec.mr.state, stopping: !!rec.stopping, ms: Date.now() - rec.t0, mime: rec.mime} : null};   // для тестов
+window.__nu = {dbg, decision: () => lastDecision, origin: () => Date.now() - performance.now(), skewMs: CLOCK_SKEW, hostNow: () => clk() + (isHost ? 0 : clkOff), clkInfo: () => ({off: Math.round(clkOff), rtt: Math.round(clkRtt), n: clkSamples.length}), simSmile: tt => reportSmile(snapshot(), 'тест', clk() + (tt - Date.now())), duck: reset => { const r = {minDb: +duckMin.toFixed(1), gainDb: +duckDb.toFixed(1), myDb: +myDb.toFixed(1), remDb: +remDb.toFixed(1), active: !!duck}; if (reset) duckMin = 0; return r; }, smileOf, isLaugh, thr: base => Math.max(SMILE_MIN, base + SMILE_OVER), aud: () => roster.filter(r => r.id !== myId).map(r => audioFlowing(r.id) ? 'rtc' : Date.now() - (pcmLast.get(r.id) || 0) < 3000 ? 'pcm' : 0), get srv(){ return srvUp(); }, get fps(){ return detFps; }, out: () => outCv ? outCv.toDataURL('image/png') : '', mask: id => setMask(id), recDraw: () => { const g = document.createElement('canvas').getContext('2d'); g.canvas.width = g.canvas.height = 200; const ok = recDrawCover(g, $('cam'), 0, 0, 200, 200, true); return [ok, ...g.getImageData(100, 100, 1, 1).data, $('cam').videoWidth, $('cam').currentTime]; }, recDbg: () => { const c = $('cam'), t = document.querySelector('.tile[data-id="me"]'); return {w: c.videoWidth, rs: c.readyState, p: c.paused, disp: getComputedStyle(c).display, rect: recRects.map(r => [r.t.dataset.id, Math.round(r.x), Math.round(r.y), Math.round(r.w), Math.round(r.h)]), px: rec ? [...rec.g.getImageData(100, 100, 1, 1).data] : null, mask: maskId, out: !!outCv}; }, recInfo: () => rec ? {bytes: rec.bytes, n: rec.chunks.length, st: rec.mr.state, stopping: !!rec.stopping, ms: Date.now() - rec.t0, mime: rec.mime} : null};   // для тестов
 const NOMESH = new URLSearchParams(location.search).has('nomesh');   // для теста запасного пути
 const remote = new Map();    // id -> MediaStream, пришедший напрямую
 const relays = new Map();    // гость: id -> звонок-пересылка; создатель: 'гость|id' -> звонок
@@ -1354,6 +1360,7 @@ function randLeave(){
   for (const c of calls.values()) try { c.close(); } catch(e){} calls.clear();
   document.querySelectorAll('#grid .tile:not([data-id="me"])').forEach(t => t.remove()); layoutGrid();
   phase = 'idle'; players.clear(); roster = [];
+  if (voice) setVoice(false);
   $('modes').style.display = ''; $('btnInvite').style.display = ''; $('btnCopy').style.display = ''; $('roomCode').style.display = '';
 }
 function openMatch(){
@@ -1385,6 +1392,7 @@ async function playRandom(){
 async function matchStart(m){
   clearInterval(queueT); mwsWant = true; matchInfo = m; roomTok = m.tok || '';
   try {
+    if (!voice) await setVoice(true);   // незнакомцы играют на расстоянии — сразу голосовая связь
     if (m.host === myId){
       isHost = true; inRoom = false; hostId = myId; ep = 0;
       await netOpen(m.room, 'all', {type: 'gone', mid: rid()});
@@ -1396,7 +1404,7 @@ async function matchStart(m){
 function randLobbyUi(){
   $('lobbyHint').textContent = 'Сфоткайся — игра начнётся сама, когда все будут готовы';
   $('btnInvite').style.display = 'none'; $('btnCopy').style.display = 'none'; $('modes').style.display = 'none'; $('btnStart').style.display = 'none'; $('roomCode').style.display = 'none';
-  $('modeHint').textContent = '🎲 Случайная игра: без голоса, выбывает тот, кто улыбнулся. Остаётся последний';
+  $('modeHint').textContent = '🎲 Случайная игра: с голосом, выбывает тот, кто улыбнулся. Остаётся последний';
 }
 function randLobby(all){
   if (!isHost || phase !== 'idle') return;
