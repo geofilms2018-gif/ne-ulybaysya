@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640" width="640" height="640"><defs><linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#b9f3ff"/><stop offset="1" stop-color="#7aa8ff"/></linearGradient>
+<radialGradient id="f" cx=".36" cy=".3" r=".85"><stop offset="0" stop-color="#fff59a"/><stop offset=".5" stop-color="#ffd12e"/><stop offset="1" stop-color="#f08a00"/></radialGradient>
+<linearGradient id="t" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#cfd6e6"/></linearGradient>
+<filter id="sh"><feDropShadow dx="0" dy="22" stdDeviation="18" flood-color="#1b3a8a" flood-opacity=".45"/></filter>
+<filter id="soft"><feDropShadow dx="0" dy="6" stdDeviation="5" flood-color="#7a4a00" flood-opacity=".45"/></filter></defs>
+<rect width="640" height="640" fill="url(#bg)"/>
+<g filter="url(#sh)"><circle cx="320" cy="316" r="236" fill="url(#f)"/></g>
+<ellipse cx="236" cy="172" rx="80" ry="44" fill="#fff" opacity=".55" transform="rotate(-28 236 172)"/>
+<path d="M188 252 Q232 212 276 252 M364 252 Q408 212 452 252" fill="none" stroke="#5a3200" stroke-width="22" stroke-linecap="round" filter="url(#soft)"/>
+<path d="M200 288 q-16 44 8 80 M440 288 q16 44 -8 80" fill="none" stroke="#45c3ff" stroke-width="22" stroke-linecap="round" opacity=".9"/>
+<ellipse cx="170" cy="350" rx="40" ry="24" fill="#ff7a59" opacity=".45"/><ellipse cx="470" cy="350" rx="40" ry="24" fill="#ff7a59" opacity=".45"/>
+<g filter="url(#soft)"><g transform="rotate(-12 320 404)"><rect x="168" y="376" width="304" height="58" rx="10" fill="url(#t)"/><path d="M168 376 l-12 9 l12 9 l-12 9 l12 9 l-12 9 l12 9 M472 376 l12 9 l-12 9 l12 9 l-12 9 l12 9 l-12 9" fill="url(#t)"/></g>
+<g transform="rotate(13 320 404)"><rect x="168" y="376" width="304" height="58" rx="10" fill="url(#t)"/><rect x="180" y="384" width="280" height="10" rx="5" fill="#fff" opacity=".8"/></g></g></svg>

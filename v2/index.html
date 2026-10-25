@@ -6,6 +6,8 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#111">
 <title>Не улыбайся</title>
+<link rel="icon" type="image/svg+xml" href="../ikonka/ikonka.svg">
+<link rel="apple-touch-icon" href="../ikonka/ikonka_180.png">
 <style>
   :root{--bg:#000;--fg:#fff;--mut:#a8a8a8;--live:#ff0050;--ig:linear-gradient(45deg,#feda75 0%,#fa7e1e 25%,#d62976 50%,#962fbf 75%,#4f5bd5 100%)}
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -13,7 +15,8 @@
   .scr{position:fixed;top:0;left:0;right:0;height:var(--tg-viewport-stable-height,100%);display:none;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;flex-direction:column;align-items:center;justify-content:center;padding:24px 16px calc(24px + env(safe-area-inset-bottom));gap:14px;text-align:center}
   .scr.on{display:flex}
   #home{background:radial-gradient(120% 80% at 50% 0%,#2a0a3a 0%,#000 60%)}
-  .logo{width:96px;height:96px;border-radius:28px;background:var(--ig);display:flex;align-items:center;justify-content:center;font-size:54px;box-shadow:0 10px 40px #d6297666}
+  .logo{width:96px;height:96px;border-radius:28px;display:flex;align-items:center;justify-content:center;overflow:hidden;box-shadow:0 10px 40px #4f7bd566}
+  .logo img{display:block;width:100%;height:100%}
   h1{font-size:34px;margin:6px 0 0;font-weight:800;letter-spacing:-.5px}
   h1 span{background:var(--ig);-webkit-background-clip:text;background-clip:text;color:transparent}
   p{margin:0;color:var(--mut);font-size:15px}
@@ -167,7 +170,7 @@
 <body>
 
 <section class="scr on" id="home">
-  <div class="logo">😐</div>
+  <div class="logo"><img src="../ikonka/ikonka.svg" alt="" width="96" height="96"></div>
   <h1>НЕ <span>УЛЫБАЙСЯ</span></h1>
   <p>Кто первый улыбнётся — проиграл</p>
   <input id="name" placeholder="Твоё имя" maxlength="14" autocomplete="off">
