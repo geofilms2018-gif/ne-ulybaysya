@@ -90,6 +90,12 @@
   .mk.on{border-color:#ff2d7a} .mk canvas{width:54px;height:54px}
   .mk i{position:absolute;top:2px;right:4px;font-style:normal;font-size:10px}
   .mk.lock canvas{opacity:.55}
+  .mk.vip{border-color:#e8b923} .mk.vip.on{border-color:#ff2d7a}
+  .mk b.vp{position:absolute;top:2px;left:3px;font-size:9px;background:#e8b923;color:#000;border-radius:5px;padding:0 4px;font-weight:800}
+  .mstyles{display:flex;gap:6px;overflow-x:auto;width:100%;max-width:360px;scrollbar-width:none}
+  .mstyles button{flex:none;width:auto;font-size:12px;padding:5px 10px;border-radius:14px;background:#1f1f1f;color:#cfcfcf}
+  .mstyles button.on{background:var(--ig);color:#fff}
+  #maskPaid{font-size:12px;color:#e8b923}
   #btnMic{display:none;max-width:220px} body.voice #btnMic{display:block}
   .tname{position:absolute;left:10px;bottom:8px;z-index:1;font-weight:700;font-size:13px;background:#0007;padding:3px 8px;border-radius:10px}
   #prepAv{position:absolute;top:22%;left:0;right:0;display:flex;justify-content:center;gap:14px;z-index:4;pointer-events:none}
@@ -141,8 +147,10 @@
   <p id="modeHint">Режим: 🤝 рядом — без голоса</p>
   <div class="pvwrap"><video id="pv" playsinline muted autoplay></video><video id="pvMask" playsinline muted autoplay style="display:none"></video></div>
   <button class="sec" id="btnMic">🎤 Микрофон включён</button>
+  <div class="mstyles" id="maskStyles"></div>
   <div class="masks" id="maskBar"></div>
   <p id="maskHint">Маска — видна всем на твоём видео</p>
+  <p id="maskPaid"></p>
   <button class="grad" id="btnFace">📸 Это моё обычное лицо</button>
   <p id="faceHint">Сделай серьёзное лицо и нажми — это будет твоя аватарка</p>
   <div id="players"></div>
@@ -194,7 +202,7 @@
 <script src="https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js"></script>
 <script type="module">
 import {FaceLandmarker, FilesetResolver} from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
-import {MASKS, faceFrame, previewFrame, drawMask} from "../maski.js";
+import {MASKS, STYLES, PAID_FROM, faceFrame, previewFrame, drawMask} from "../maski.js";
 
 const $ = id => document.getElementById(id);
 const PREFIX = 'ne-ulybaysya-v2-';   // id для видео (WebRTC)
@@ -346,7 +354,7 @@ async function prepareDevice(){
   if (!loopOn){ loopOn = true; requestAnimationFrame(loop); }
   let sm = ''; try { sm = localStorage.getItem('nu_mask') || ''; } catch(e){}
   const m = MASKS.find(x => x.id === sm);
-  if (m && (m.free || ALLMASKS) && !maskId) setMask(sm);
+  if (m && maskOpen(m) && !maskId) setMask(sm);
 }
 
 const detCv = document.createElement('canvas'), detG = detCv.getContext('2d');
@@ -388,7 +396,7 @@ function loop(){
   if (!play && !maskId) return;   // в лобби детектор крутится, только если надета маска
   const now = performance.now(), v = $('lobby').classList.contains('on') ? $('pv') : $('cam');
   if (phase === 'run') $('clock').textContent = fmt(now - t0);
-  if (now - lastDet < (play ? DET_MS : 100) || v.currentTime === lastVideoTime) return;
+  if (now - lastDet < DET_MS || v.currentTime === lastVideoTime) return;
   const s = detectRaw(v);
   if (s === undefined) return;
   detFps = detFps ? detFps * 0.9 + 100 / (now - lastDet) : 1000 / DET_MS;   // реальная частота детектора (для отладки)
@@ -605,18 +613,38 @@ function setMask(id){
   for (const el of document.querySelectorAll('.mk')) el.classList.toggle('on', el.dataset.id === maskId);
   try { localStorage.setItem('nu_mask', maskId); } catch(e){}
 }
+// ---------- карточки масок: стили, замки, плашка про платность, VIP ----------
+const NOW = (() => { const p = new URLSearchParams(location.search).get('now'); const d = p ? new Date(p) : new Date(); return isNaN(d) ? new Date() : d; })();   // ?now=2026-11-02 — проверка замков
+const beforePaid = () => NOW < PAID_FROM;
+const paidText = () => PAID_FROM.toLocaleDateString('ru-RU', {day: 'numeric', month: 'long'});
+let vipUser = false, maskStyle = '';
+const isVip = () => vipUser;
+// маска доступна: бесплатная, пока всё бесплатно (до PAID_FROM), или VIP-пользователю
+const maskOpen = m => !m.id || m.free || ALLMASKS || beforePaid() || (m.vip && isVip());
+async function loadVip(){
+  if (!TG || !TG.initData) return;
+  try { const r = await fetch(SRV + '/vip?initData=' + encodeURIComponent(TG.initData)); const j = await r.json(); vipUser = !!(j && j.vip); } catch(e){}
+  buildMaskBar();
+}
 function buildMaskBar(){
-  const bar = $('maskBar'), items = [{id: '', name: 'Без маски', free: true}, ...MASKS];
+  const bar = $('maskBar'), st = $('maskStyles'), items = [{id: '', name: 'Без маски', free: true}, ...MASKS.filter(m => !maskStyle || m.style === maskStyle)];
+  bar.innerHTML = ''; st.innerHTML = '';
+  for (const [k, n] of [['', 'Все'], ...Object.entries(STYLES)]){
+    const b = document.createElement('button'); b.className = 'sec' + (maskStyle === k ? ' on' : ''); b.textContent = n;
+    b.onclick = () => { maskStyle = k; buildMaskBar(); }; st.append(b);
+  }
+  $('maskPaid').textContent = beforePaid() ? 'Бесплатно до ' + paidText() + ', потом платно' : '⭐ Платные маски — скоро за звёзды';
   for (const m of items){
-    const el = document.createElement('div'), open = m.free || ALLMASKS;
-    el.className = 'mk' + (open ? '' : ' lock'); el.dataset.id = m.id;
+    const el = document.createElement('div'), open = maskOpen(m);
+    el.className = 'mk' + (open ? '' : ' lock') + (m.vip ? ' vip' : ''); el.dataset.id = m.id;
     const cv = document.createElement('canvas'); cv.width = cv.height = 108;
     const g = cv.getContext('2d'), f = previewFrame(108);
-    g.fillStyle = '#3a3a3a'; g.beginPath(); g.ellipse(f.x, f.y + f.W * 0.62, f.W * 0.52, f.W * 0.66, 0, 0, Math.PI * 2); g.fill();
+    g.translate(108, 0); g.scale(-1, 1);   // превью зеркально, как видео, — текст читается
+    g.fillStyle = '#3a3a3a'; g.beginPath(); g.ellipse(f.x, f.y + f.W * 0.55, f.W * 0.5, f.W * 0.62, 0, 0, Math.PI * 2); g.fill();
     if (m.id) drawMask(g, m.id, f, 0.6, -5);
-    el.append(cv); el.insertAdjacentHTML('beforeend', '<span>' + esc(m.name) + '</span>' + (open ? '' : '<i>⭐</i>'));
+    el.append(cv); el.insertAdjacentHTML('beforeend', '<span>' + esc(m.name) + '</span>' + (m.vip ? '<b class="vp">VIP</b>' : '') + (open ? '' : '<i>⭐</i>'));
     el.onclick = () => {
-      if (!open){ $('maskHint').textContent = '⭐ «' + m.name + '» — скоро за звёзды'; return; }
+      if (!open){ $('maskHint').textContent = (m.vip ? '👑 «' + m.name + '» — для VIP' : '⭐ «' + m.name + '» — скоро за звёзды'); return; }
       $('maskHint').textContent = m.id ? 'Маска «' + m.name + '» — видна всем на твоём видео' : 'Маска — видна всем на твоём видео';
       setMask(m.id);
     };
@@ -1152,6 +1180,7 @@ if (TG){
   } catch(e){}
 }
 // заготовка под Stars и подарки: TG.openInvoice(ссылка_на_счёт) — счёт выставляет бот, в коде страницы токена нет
+loadVip();
 const TG_START = TG && TG.initDataUnsafe && TG.initDataUnsafe.start_param || '';
 const INVITE = (new URLSearchParams(location.search).get('r') || TG_START || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4);
 try { $('name').value = localStorage.getItem('nu_name') || ''; } catch(e){}
