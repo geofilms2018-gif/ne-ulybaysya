@@ -370,17 +370,24 @@ const DRAW = {
     g.fillStyle = '#fff7b0'; g.fillRect(-px * 5.5, -0.06 - px * 4 + b, px, px);
   },
   cashier(g, f, t){
-    // красная кепка с жёлтой полосой и козырьком (без логотипов)
-    g.save(); g.translate(0, -0.02);
-    g.fillStyle = lg(g, 0, -0.3, 0, 0.05, [[0, '#ff4b3e'], [1, '#c4161c']]);
-    g.beginPath(); g.moveTo(-0.5, 0.04); g.bezierCurveTo(-0.52, -0.5, 0.52, -0.5, 0.5, 0.04); g.quadraticCurveTo(0, 0.1, -0.5, 0.04); g.closePath(); g.fill();
-    g.strokeStyle = '#8f0d12'; g.lineWidth = 0.009; for (const x of [-0.2, 0, 0.2]){ g.beginPath(); g.moveTo(x * 0.2, -0.41); g.quadraticCurveTo(x * 1.5, -0.2, x * 2.2, 0.03); g.stroke(); }
-    g.fillStyle = '#ffd52e'; g.beginPath(); g.moveTo(-0.5, 0.0); g.quadraticCurveTo(0, 0.06, 0.5, 0.0); g.lineTo(0.5, 0.045); g.quadraticCurveTo(0, 0.11, -0.5, 0.045); g.closePath(); g.fill();
-    g.fillStyle = '#9e1016'; g.beginPath(); g.arc(0, -0.405, 0.032, 0, Math.PI * 2); g.fill();
-    g.fillStyle = lg(g, 0, 0.02, 0, 0.3, [[0, '#9a0e15'], [1, '#e8403a']]);
-    g.beginPath(); g.moveTo(-0.5, 0.07); g.bezierCurveTo(-0.3, 0.36, 0.3, 0.36, 0.5, 0.07); g.quadraticCurveTo(0, 0.17, -0.5, 0.07); g.fill();
-    g.strokeStyle = '#6f0a10'; g.lineWidth = 0.01; g.beginPath(); g.moveTo(-0.5, 0.07); g.bezierCurveTo(-0.3, 0.36, 0.3, 0.36, 0.5, 0.07); g.stroke();
-    g.fillStyle = '#ffffffaa'; g.beginPath(); g.ellipse(-0.2, -0.27, 0.07, 0.022, -0.7, 0, Math.PI * 2); g.fill();
+    // бейсболка: низкая посадка, красный купол с жёлтым кантом, козырёк вперёд (смещается с поворотом головы), без логотипов
+    const by = f.yaw * 0.16;
+    g.save();
+    g.fillStyle = lg(g, -0.4, -0.3, 0.4, 0.05, [[0, '#ff5a4c'], [0.55, '#e0302a'], [1, '#a31219']]);
+    g.beginPath(); g.moveTo(-0.46, 0.08); g.bezierCurveTo(-0.5, -0.22, -0.2, -0.3, 0.02, -0.3); g.bezierCurveTo(0.3, -0.3, 0.5, -0.2, 0.46, 0.08); g.quadraticCurveTo(0, 0.13, -0.46, 0.08); g.closePath(); g.fill();
+    g.strokeStyle = '#8f0d12'; g.lineWidth = 0.008;
+    g.beginPath(); g.moveTo(0.02, -0.3); g.quadraticCurveTo(0.0, -0.1, 0.0, 0.1); g.stroke();                  // шов по центру
+    g.beginPath(); g.moveTo(-0.2, -0.27); g.quadraticCurveTo(-0.3, -0.12, -0.33, 0.09); g.moveTo(0.24, -0.27); g.quadraticCurveTo(0.3, -0.12, 0.33, 0.09); g.stroke();
+    g.fillStyle = '#a31219'; g.beginPath(); g.arc(0.02, -0.3, 0.028, 0, Math.PI * 2); g.fill();              // пуговка
+    g.strokeStyle = '#ffd52e'; g.lineWidth = 0.032; g.beginPath(); g.moveTo(-0.46, 0.085); g.quadraticCurveTo(0, 0.14, 0.46, 0.085); g.stroke();   // кант
+    g.fillStyle = '#ffd52e'; g.beginPath(); g.arc(by * 0.4, -0.1, 0.07, 0, Math.PI * 2); g.fill();         // эмблема-пятно (без логотипа)
+    g.fillStyle = '#e0302a'; g.beginPath(); g.arc(by * 0.4, -0.1, 0.045, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#ffffff88'; g.beginPath(); g.ellipse(-0.22, -0.18, 0.08, 0.022, -0.6, 0, Math.PI * 2); g.fill();
+    // козырёк: смотрит на зрителя, чуть уже купола
+    g.translate(by, 0);
+    g.fillStyle = lg(g, 0, 0.06, 0, 0.28, [[0, '#7d0c12'], [0.35, '#c92027'], [1, '#ee463f']]);
+    g.beginPath(); g.moveTo(-0.34, 0.1); g.bezierCurveTo(-0.3, 0.34, 0.3, 0.34, 0.34, 0.1); g.bezierCurveTo(0.18, 0.15, -0.18, 0.15, -0.34, 0.1); g.closePath(); g.fill();
+    g.strokeStyle = '#ffd52e'; g.lineWidth = 0.011; g.beginPath(); g.moveTo(-0.3, 0.14); g.bezierCurveTo(-0.26, 0.3, 0.26, 0.3, 0.3, 0.14); g.stroke();
     g.restore();
   },
   witch(g, f, t, t0, E){
