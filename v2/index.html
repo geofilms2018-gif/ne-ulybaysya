@@ -285,6 +285,7 @@ const SMILE_MIN = 2.1;       // порог улыбки
 const SMILE_OVER = 2.0;      // насколько выше своего спокойного лица (для тех, у кого уголки рта приподняты и без улыбки)
 const SMILE_BOTH = 0.3;      // оба уголка рта подняты хотя бы на столько — ухмылка одним уголком не считается
 const SMILE_LAUGH = 0.45;    // смех: оба уголка ≥0,45 и видны верхние зубы — улыбка при любом счёте (прищур и открытый рот её не гасят)
+const SMILE_CORNERS = 0.45;  // лёгкая улыбка без зубов: оба уголка ≥0,45 (и на 0,25 выше своего спокойного лица), рот почти закрыт (стенд Гео 25.10)
 const SMILE_HOLD_MS = 150;   // улыбка держится 0,15 с подряд (по медиане 3 кадров) — проиграл
 const DET_W = 256, DET_MS = 66;   // детектор: кадр 256 px, не чаще 15 раз в секунду — телефон не греется
 const NOFACE_WARN_MS = 1000, NOFACE_LOSE_MS = 2500; // спрятал лицо = проиграл
@@ -294,7 +295,7 @@ let isHost = false, peer = null, myName = '';
 const players = new Map();   // хост: id -> {name, avatar, ready, seen}
 let landmarker = null, stream = null;
 let phase = 'idle';          // idle | prep | run | done
-let t0 = 0, baseline = -9, smileSince = 0, sentSmile = false;
+let t0 = 0, baseline = -9, baseCorners = 0, calibC = [], smileSince = 0, sentSmile = false;
 let myAvatar = '', myReady = false, roster = [], calls = new Map();
 let lastFaceShot = '', lastShotAt = 0, smileFrames = 0, corners = 0, laugh = false, sBuf = [], lastDet = 0, detFps = 0, noFaceSince = 0, lastVideoTime = -1, lastScore = null, modelReady = null, wakeLock = null;
 
@@ -453,7 +454,7 @@ function detectRaw(v){
   for (const c of bs.categories) b[c.categoryName] = c.score;
   dbg.old = Math.max(dbg.old, b.mouthSmileLeft || 0, b.mouthSmileRight || 0); dbg.jaw = Math.max(dbg.jaw, b.jawOpen || 0);
   corners = Math.min(b.mouthSmileLeft || 0, b.mouthSmileRight || 0);
-  laugh = isLaugh(b);
+  laugh = isLaugh(b) || (corners >= Math.max(SMILE_CORNERS, baseCorners + 0.25) && (b.jawOpen || 0) < 0.3);
   return smileOf(b);
 }
 // оценка улыбки по блендшейпам — одна на игру и на тесты (__nu.smileOf)
@@ -1711,7 +1712,7 @@ async function calibrate(){
     const x = detectRaw(v);
     if (x === null || x === undefined) continue;
     if (!out.length) end = Math.min(end, performance.now() + 2500);
-    out.push(x);
+    out.push(x); calibC.push(corners);
   }
   return out;
 }
@@ -1721,13 +1722,14 @@ $('btnFace').onclick = async () => {
   if (phase !== 'idle') return;
   try { await initCam(); } catch(e){ $('faceHint').textContent = camHelp(e); return; }
   $('btnFace').disabled = true; $('faceHint').textContent = 'Замри… 😐';
-  let calib = [];
+  let calib = []; calibC = [];
   try { calib = await calibrate(); } catch(e){ console.warn('calib', e); }
   $('btnFace').disabled = false;
   if (calib.length < 3){ $('faceHint').textContent = 'Лицо не нашёл 💡 Больше света, лицо целиком в рамку — и нажми ещё раз'; return; }
   const sorted = calib.slice().sort((a, b) => a - b), med = sorted[Math.floor(sorted.length/2)];
   if (med > SMILE_MIN + 0.5){ $('faceHint').textContent = 'Ты улыбаешься 😏 Сделай серьёзное лицо и нажми ещё раз'; return; }
   baseline = Math.min(0.5, med);
+  { const c = calibC.slice().sort((a, b) => a - b); baseCorners = c.length ? c[c.length >> 1] : 0; }
   const v = $('pv'); myAvatar = smallShot(v.videoWidth ? v : $('cam')); myReady = true;
   $('btnFace').textContent = '🔄 Переснять'; $('faceHint').textContent = 'Готово ✅ Это твоё обычное лицо';
   if (isHost){ const p = players.get(myId); if (p){ p.avatar = myAvatar; p.ready = true; } sendLobby(); }
