@@ -42,10 +42,10 @@
   .me .ring b{font-size:14px;border-width:2px}
   .viewers{display:inline-flex;align-items:center;gap:5px;background:#0006;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);font-weight:700;font-size:13px;padding:4px 8px;border-radius:6px}
   .sp{flex:1}
-  .hud{position:absolute;left:0;right:0;top:calc(64px + env(safe-area-inset-top));display:flex;flex-direction:column;align-items:center;gap:8px;z-index:2}
-  #clock{font-size:60px;font-weight:900;font-variant-numeric:tabular-nums;text-shadow:0 2px 12px #000a}
-  #status{font-size:15px;font-weight:700;background:#0006;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);padding:6px 12px;border-radius:20px}
-  .meter{width:55%;height:6px;border-radius:3px;background:#fff3;overflow:hidden}
+  .hud{position:absolute;left:0;right:0;top:calc(12px + env(safe-area-inset-top));display:flex;flex-direction:column;align-items:center;gap:3px;z-index:2;pointer-events:none}
+  #clock{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums;text-shadow:0 1px 6px #000a;line-height:1;opacity:.6}
+  #status{font-size:11px;font-weight:700;background:#0006;padding:2px 8px;border-radius:10px;opacity:.8;max-width:56vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .meter{width:30%;height:4px;border-radius:3px;background:#fff3;overflow:hidden}
   .meter i{display:block;height:100%;width:0;background:var(--ig);transition:width .08s}
   #feed{position:absolute;left:12px;right:80px;bottom:calc(20px + env(safe-area-inset-bottom));z-index:2;display:flex;flex-direction:column;gap:8px;align-items:flex-start;-webkit-mask-image:linear-gradient(transparent,#000 30%);mask-image:linear-gradient(transparent,#000 30%);max-height:40vh;overflow:hidden;justify-content:flex-end}
   .cm{display:flex;gap:8px;align-items:center;font-size:14px;text-align:left;animation:up .3s}
@@ -70,7 +70,22 @@
   .av.ok .ring{box-shadow:0 0 0 2px #2ecc71}
   .av small{color:var(--mut);font-size:11px}
   #grid{position:absolute;inset:0;display:grid;gap:2px;background:#000;grid-template-columns:1fr;grid-auto-rows:1fr}
-  #grid.n4,#grid.n5,#grid.n6{grid-template-columns:1fr 1fr}
+  #grid.n3,#grid.n4,#grid.n5,#grid.n6,#grid.n7,#grid.n8{grid-template-columns:1fr 1fr}
+  #grid.n2{grid-template-rows:1fr 1fr}
+  #grid.n3{grid-template-rows:1fr 1fr} #grid.n3>.tile:first-child{grid-column:1/-1}
+  #grid.n4{grid-template-rows:1fr 1fr}
+  #grid.n5{grid-template-rows:repeat(3,1fr)} #grid.n5>.tile:last-child{grid-column:1/-1}
+  #grid.n6{grid-template-rows:repeat(3,1fr)}
+  #grid.n7{grid-template-columns:repeat(6,1fr);grid-template-rows:repeat(3,1fr)} #grid.n7>.tile{grid-column:span 3} #grid.n7>.tile:nth-child(-n+3){grid-column:span 2}
+  #grid.n3>.tile:first-child video,#grid.n5>.tile:last-child video{object-position:50% 30%}
+  #grid.n8{grid-template-rows:repeat(4,1fr)}
+  #grid.n5 .ph .ring,#grid.n6 .ph .ring,#grid.n7 .ph .ring,#grid.n8 .ph .ring{width:52px;height:52px}
+  #grid.n7 .ph .ring,#grid.n8 .ph .ring{width:44px;height:44px}
+  #grid.n7 .tname{max-width:calc(100% - 44px)}
+  #grid.n7 .ph small,#grid.n8 .ph small{display:none}
+  #grid.n6 .tname,#grid.n7 .tname,#grid.n8 .tname{font-size:11px;left:6px;bottom:6px;padding:2px 6px;max-width:calc(100% - 52px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #grid.n6 .mic,#grid.n7 .mic,#grid.n8 .mic{width:30px;height:30px;font-size:14px;right:5px;bottom:5px}
+  #grid.n7 .na,#grid.n8 .na{top:5px;left:5px;font-size:10px;padding:2px 5px}
   .tile{position:relative;overflow:hidden;background:#111}
   .tile video{width:100%;height:100%;object-fit:cover}
   .ph .ring{width:76px;height:76px}
@@ -92,15 +107,27 @@
   .mk.lock canvas{opacity:.55}
   .mk.vip{border-color:#e8b923} .mk.vip.on{border-color:#ff2d7a}
   .mk b.vp{position:absolute;top:2px;left:3px;font-size:9px;background:#e8b923;color:#000;border-radius:5px;padding:0 4px;font-weight:800}
+  #recPill{animation:blink 1.2s infinite} @keyframes blink{50%{opacity:.45}}
+  #sideBtns{position:absolute;right:12px;top:calc(56px + env(safe-area-inset-top));z-index:6;display:flex;flex-direction:column;gap:8px}
+  .mkbtn{width:36px;height:36px;padding:0;border-radius:50%;background:#0008;border:1px solid #fff3;font-size:18px;color:#fff;pointer-events:auto}
+  #mkSheet{position:absolute;left:0;right:0;bottom:0;z-index:7;background:#000d;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);padding:6px 0 calc(8px + env(safe-area-inset-bottom));transform:translateY(110%);transition:transform .2s;border-radius:16px 16px 0 0}
+  #mkSheet.on{transform:none}
+  #mkSheet .mkh{display:flex;justify-content:space-between;align-items:center;padding:0 14px 4px;font-size:13px}
+  #mkSheet .mkh button{width:30px;height:30px;padding:0;border-radius:50%;background:#262626;color:#fff;font-size:14px}
+  #mkRow{display:flex;gap:6px;overflow-x:auto;padding:0 12px;scrollbar-width:none}
+  #mkRow .mk{width:62px}
+  .tile.out{filter:grayscale(1) brightness(.45)} .tile.out::after{content:'😂 выбыл(а)';position:absolute;left:0;right:0;top:42%;text-align:center;font-weight:800;font-size:15px;color:#fff;text-shadow:0 1px 6px #000}
+  #repList{display:flex;flex-direction:column;gap:8px;width:100%;max-width:340px} #repList button{background:#262626;color:#fff}
   .mstyles{display:flex;gap:6px;overflow-x:auto;width:100%;max-width:360px;scrollbar-width:none}
   .mstyles button{flex:none;width:auto;font-size:12px;padding:5px 10px;border-radius:14px;background:#1f1f1f;color:#cfcfcf}
   .mstyles button.on{background:var(--ig);color:#fff}
   #maskPaid{font-size:12px;color:#e8b923}
   #btnMic{display:none;max-width:220px} body.voice #btnMic{display:block}
   .tname{position:absolute;left:10px;bottom:8px;z-index:1;font-weight:700;font-size:13px;background:#0007;padding:3px 8px;border-radius:10px}
-  #prepAv{position:absolute;top:22%;left:0;right:0;display:flex;justify-content:center;gap:14px;z-index:4;pointer-events:none}
+  #prepAv{position:absolute;top:22%;left:0;right:0;display:flex;flex-wrap:wrap;justify-content:center;gap:10px 14px;padding:0 8px;z-index:4;pointer-events:none}
   #prepAv .pa{display:flex;flex-direction:column;align-items:center;gap:6px;opacity:0}
   #prepAv .ring{width:76px;height:76px;animation:none}
+  #prepAv.many .ring{width:56px;height:56px} #prepAv.many .pa span{max-width:64px;font-size:12px}
   #prepAv .pa span{font-weight:700;font-size:13px;max-width:84px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-shadow:0 1px 4px #000}
   #prepAv.in .pa{animation:flyin .6s cubic-bezier(.2,1.6,.4,1) forwards, bob 1s .6s ease-in-out infinite}
   #prepAv.out .pa{animation:flyout .7s cubic-bezier(.6,-.4,.8,.6) forwards}
@@ -144,13 +171,33 @@
   <h1>НЕ <span>УЛЫБАЙСЯ</span></h1>
   <p>Кто первый улыбнётся — проиграл</p>
   <input id="name" placeholder="Твоё имя" maxlength="14" autocomplete="off">
-  <button class="grad" id="btnPlay" style="font-size:20px;padding:18px">➕ Создать комнату</button>
+  <button class="grad" id="btnRandom" style="font-size:20px;padding:18px">🎲 Случайная игра</button>
+  <p style="margin:-6px 0 0;font-size:12px">3–8 незнакомых игроков, на выбывание · 18+</p>
+  <button class="sec" id="btnPlay" style="font-size:17px;padding:14px">👥 С друзьями: создать комнату</button>
   <p style="margin:4px 0 -4px">или войди к друзьям</p>
   <div class="row"><input id="code" class="code" placeholder="КОД" maxlength="12" autocomplete="off" autocapitalize="characters"><button class="sec" id="btnPaste" style="max-width:110px;font-size:14px">📋 Вставить</button></div>
   <button class="sec" id="btnJoin">Войти</button>
   <p id="inviteHint" style="display:none"></p>
   <p id="homeErr" class="err"></p>
   <button class="sec" id="btnBrowser" style="display:none">🌐 Открыть в браузере</button>
+</section>
+
+<section class="scr" id="age">
+  <div style="font-size:64px">🔞</div>
+  <h2 style="margin:0">Случайная игра — 18+</h2>
+  <p>Ты будешь играть с незнакомыми людьми: они увидят твоё видео. Если кто-то ведёт себя плохо — жми «🚩 Пожаловаться» после игры. Нужен Телеграм.</p>
+  <button class="grad" id="btnAge">Мне есть 18 — поехали</button>
+  <button class="sec" id="btnAgeNo">Назад</button>
+</section>
+
+<section class="scr" id="queue">
+  <div style="font-size:64px">🔎</div>
+  <h2 style="margin:0" id="qTitle">Ищем игроков…</h2>
+  <p id="qCount" style="font-size:20px;color:#fff;font-weight:800">В очереди: 1</p>
+  <p id="qHint">Игра начнётся, когда наберётся 3–8 человек (максимум через 2 минуты)</p>
+  <div class="meter" style="width:60%"><i id="qBar" style="width:0"></i></div>
+  <button class="sec" id="btnQLeave">Отмена</button>
+  <p id="qErr" class="err"></p>
 </section>
 
 <section class="scr" id="lobby">
@@ -180,15 +227,18 @@
   <div class="top">
     <div class="me"><div class="ring"><b id="meAv">?</b></div><span id="meName"></span></div>
     <span class="sp"></span>
+    <span class="livepill" id="recPill" style="display:none;background:#e11">● идёт запись</span>
     <span class="livepill" id="livePill" style="visibility:hidden">LIVE</span>
     <span class="viewers">👁 <span id="viewers">1</span></span>
   </div>
+  <div id="sideBtns"><button id="btnMk" class="mkbtn" aria-label="Маски">🎭</button><button id="btnRec" class="mkbtn" aria-label="Запись" style="display:none">⏺</button></div>
   <div class="hud">
     <div id="clock">0:00.0</div>
     <div id="status">Загружаю распознавание…</div>
     <div class="meter"><i id="meter"></i></div>
   </div>
   <div id="feed"></div>
+  <div id="mkSheet"><div class="mkh"><b>Маска</b><button id="mkClose" aria-label="Закрыть">✕</button></div><div id="mkRow"></div></div>
   <div id="hearts"></div>
   <div id="prepAv"></div>
   <div id="prep"></div>
@@ -204,6 +254,9 @@
     <div class="tag" id="loserTime"></div>
     <button class="sec" id="btnShare" style="display:none">Поделиться фоткой</button>
     <button class="grad" id="btnAgain" style="display:none">Ещё раз</button>
+    <button class="sec" id="btnReport" style="display:none">🚩 Пожаловаться на игрока</button>
+    <div id="repList" style="display:none"></div>
+    <button class="sec" id="btnHome" style="display:none">← На главную</button>
     <p id="againHint"></p>
   </div>
 </section>
@@ -218,7 +271,8 @@
 <script src="https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js"></script>
 <script type="module">
 import {FaceLandmarker, FilesetResolver} from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
-import {MASKS, STYLES, PAID_FROM, faceFrame, previewFrame, drawMask} from "./maski.js";
+import {MASKS, STYLES, faceFrame, previewFrame, drawMask, preloadMasks} from "./maski.js";
+preloadMasks().then(() => { try { buildMaskBar(); } catch(e){} });
 
 const $ = id => document.getElementById(id);
 const PREFIX = 'ne-ulybaysya-v2-';   // id для видео (WebRTC)
@@ -299,11 +353,18 @@ function unlockAudio(){
 // iOS с открытым микрофоном играет WebAudio в разговорный динамик (у уха), а <audio> — в громкий.
 // Поэтому в режиме голоса весь звук WebAudio идёт через скрытый <audio>.
 let msDest = null;
-function outNode(){
+function baseOut(){
   if (!voice) return actx.destination;
   if (!msDest){ msDest = actx.createMediaStreamDestination(); $('aOut').srcObject = msDest.stream; }
   $('aOut').play().catch(() => {});
   return msDest;
+}
+let recDest = null, recTap = null;   // запись раунда: звуки игры и голос из PCM идут и в динамик, и в запись
+function outNode(){
+  const n = baseOut();
+  if (!recDest) return n;
+  if (!recTap){ recTap = actx.createGain(); recTap.connect(n); recTap.connect(recDest); }
+  return recTap;
 }
 function play(k, from){
   if (actx && bufs[k]){ if (actx.state !== 'running') actx.resume(); const s = actx.createBufferSource(); s.buffer = bufs[k]; s.connect(outNode()); s.start(0, from || 0); return; }
@@ -420,7 +481,7 @@ function loop(){
   if (maskId) drawOut(v, now);
   if (!play) return;
   if (s !== null) $('meter').style.width = (100 / (1 + Math.exp(-s))) + '%';
-  if (phase !== 'run') return;
+  if (phase !== 'run' || iAmOut) return;
   if (s !== null) dbg.s = Math.max(dbg.s, s);
   if (s === null){
     if (!noFaceSince) noFaceSince = now;
@@ -465,15 +526,17 @@ setInterval(() => { if (!isHost && inRoom) clockPing(4); }, 30000);
 // Запасной путь — два публичных MQTT-брокера; дубли отбрасываются по mid. Видео — WebRTC (TURN с нашего сервера).
 const SRV_HOST = '85-214-12-254.sslip.io', SRV = 'https://' + SRV_HOST;
 const NOSRV = new URLSearchParams(location.search).has('nosrv');   // тест: как будто сервера нет (работает запасной путь)
-let sws = null, swsWant = false, swsWill = null;
+const WS_BASE = new URLSearchParams(location.search).get('wsbase') || 'wss://' + SRV_HOST, API = new URLSearchParams(location.search).get('api') || SRV;   // тест: локальный сервер
+let sws = null, swsWant = false, swsWill = null, roomTok = '', fbCfg = null;   // fbCfg — подсказка сервера: сколько кадров запасного видео слать
 const srvUp = () => !!sws && sws.readyState === 1;
 function srvConnect(){
   if (NOSRV || !swsWant || !room) return;
-  const ws = sws = new WebSocket('wss://' + SRV_HOST + '/ws?room=' + room + '&id=' + myId);
+  const ws = sws = new WebSocket(WS_BASE + '/ws?room=' + room + '&id=' + myId + (roomTok ? '&tok=' + encodeURIComponent(roomTok) : ''));
   ws.onopen = () => { if (swsWill) ws.send(JSON.stringify({type:'_will', k: swsWill.k, m: swsWill.m})); if (swsUp) swsUp(); };
   ws.onmessage = ev => {
     let m; try { m = JSON.parse(ev.data); } catch(e){ return; }
     if (!m || !m.from) return;
+    if (m.from === 'srv'){ if (m.type === 'cfg') fbCfg = m; return; }
     if (m.mid){ if (seen.has(m.mid)) return; seen.add(m.mid); seenQ.push(m.mid); if (seenQ.length > 1000) seen.delete(seenQ.shift()); }
     route(m.k || 'all', m);
   };
@@ -488,7 +551,7 @@ const myId = rid();
 let room = '', clients = [], onNet = null, inRoom = false, lastHost = 0, lastHello = 0, ep = 0;   // ep — номер ведущего: растёт при смене
 const seen = new Set(), seenQ = [];
 function topic(k){ return 'ne-ulybaysya/v2/' + room + '/' + k; }   // h — создателю, all — всем
-function netClose(){ swsWant = false; if (sws) try { sws.close(); } catch(e){} sws = null; for (const c of clients) try { c.end(true); } catch(e){} clients = []; }
+function netClose(){ fbCfg = null; swsWant = false; if (sws) try { sws.close(); } catch(e){} sws = null; for (const c of clients) try { c.end(true); } catch(e){} clients = []; }
 function netOpen(code, willKey, will){
   netClose(); room = code;
   return new Promise((resolve, reject) => {
@@ -555,10 +618,12 @@ function demote(m){
 }
 
 // создатель: принимает сообщения гостей
+const MAX_PLAYERS = 8;
 function hostNet(m){
   const id = m.from;
   const p = players.get(id);
   if (m.type === 'hello'){
+    if (!p && players.size >= MAX_PLAYERS){ pub('all', {type:'full', to: id}); return; }
     if (p && phase === 'done' && lastLoser) pub('all', {...lastLoser, type:'loser', to: id});
     players.set(id, {name: String(m.name || '?').slice(0, 14), avatar: p ? p.avatar : '', ready: p ? p.ready : false, loss: p ? p.loss : 0, v: !!m.v || !!(p && p.v), seen: Date.now()});
     sendLobby();
@@ -569,6 +634,7 @@ function hostNet(m){
   p.seen = Date.now();
   if (m.type === 'ready'){ p.avatar = okAvatar(m.avatar); p.ready = true; sendLobby(); }
   if (m.type === 'react') broadcast({type:'react', e: String(m.e).slice(0, 4), by: id});
+  if (m.type === 'rec') broadcast({type:'rec', on: !!m.on, by: p.name, id});
   if (m.type === 'smile') hostGotSmile(id, p.name, m.photo, m.at, m.why);
   if (m.type === 'relay') hostRelay(id, String(m.of));
   if (m.type === 'cp' && typeof m.t0 === 'number') pub('all', {type:'cr', to: id, t0: m.t0, th: clk()});
@@ -585,6 +651,7 @@ function hello(){
 function guestNet(m){
   if (m.to && m.to !== myId) return;
   if (m.type === 'cr'){ clockSample(m); return; }
+  if (m.type === 'full'){ if (!inRoom && joinDone) joinDone(false); return; }
   lastHost = Date.now();
   if (hostId !== m.from){ hostId = m.from; clkSamples = []; clkOff = 0; if (inRoom){ lastHello = 0; hello(); clockPing(8); } }   // новый ведущий — напоминаем о себе и сверяем часы
   if (m.type === 'gone'){ lastHost = Date.now() - 9000; $('lobbyErr').textContent = 'Создатель вышел — передаю комнату следующему…'; return; }
@@ -644,46 +711,80 @@ function setMask(id){
   for (const el of document.querySelectorAll('.mk')) el.classList.toggle('on', el.dataset.id === maskId);
   try { localStorage.setItem('nu_mask', maskId); } catch(e){}
 }
-// ---------- карточки масок: стили, замки, плашка про платность, VIP ----------
-const NOW = (() => { const p = new URLSearchParams(location.search).get('now'); const d = p ? new Date(p) : new Date(); return isNaN(d) ? new Date() : d; })();   // ?now=2026-11-02 — проверка замков
-const beforePaid = () => NOW < PAID_FROM;
-const paidText = () => PAID_FROM.toLocaleDateString('ru-RU', {day: 'numeric', month: 'long'});
-let vipUser = false, maskStyle = '';
-const isVip = () => vipUser;
-// маска доступна: бесплатная, пока всё бесплатно (до PAID_FROM), или VIP-пользователю
-const maskOpen = m => !m.id || m.free || ALLMASKS || beforePaid() || (m.vip && isVip());
-async function loadVip(){
-  if (!TG || !TG.initData) return;
-  try { const r = await fetch(SRV + '/vip?initData=' + encodeURIComponent(TG.initData)); const j = await r.json(); vipUser = !!(j && j.vip); } catch(e){}
-  buildMaskBar();
+// ---------- карточки масок: стили, замки, покупка за ⭐, VIP ----------
+// Доступ решает сервер (/owned по подписи initData): бесплатные ∪ купленные ∪ всё для VIP. Вне Телеграма — только бесплатные.
+let maskStyle = '';
+const shop = {vip: false, owned: new Set(), prices: {}, free: new Set(['crown', 'bunny', 'hearts', 'deer']), vipOnly: new Set()};
+const isVip = () => shop.vip;
+const maskOpen = m => !m.id || ALLMASKS || shop.vip || shop.free.has(m.id) || shop.owned.has(m.id);
+async function loadShop(){
+  if (!INIT_DATA()) return;
+  try {
+    const j = await (await fetch(API + '/owned?initData=' + encodeURIComponent(INIT_DATA()))).json();
+    if (j && j.prices){ shop.vip = !!j.vip; shop.owned = new Set(j.owned || []); shop.prices = j.prices; shop.free = new Set(j.free || []); shop.vipOnly = new Set(j.vip_only || []); }
+  } catch(e){}
+  buildMaskBar(); $('btnRec').style.display = shop.vip ? '' : 'none';
+}
+const loadVip = loadShop;
+let buying = false;
+async function buyMask(m){
+  if (buying) return; buying = true;
+  try {
+    const r = await fetch(API + '/buy?mask=' + encodeURIComponent(m.id) + '&initData=' + encodeURIComponent(INIT_DATA())), j = await r.json();
+    if (!j.link){ toast(j.error === 'owned' ? 'Уже куплено' : j.error === 'vip' ? 'Эта маска — для VIP' : 'Не получилось открыть оплату'); await loadShop(); return; }
+    const st = await new Promise(res => { try { TG.openInvoice(j.link, res); } catch(e){ res('failed'); } });
+    if (st === 'paid'){
+      toast('Оплачено, открываю маску…');
+      for (let i = 0; i < 12 && !shop.owned.has(m.id) && !shop.vip; i++){ await loadShop(); if (!shop.owned.has(m.id)) await new Promise(r => setTimeout(r, 1000)); }   // платёж доходит до сервера чуть позже ответа Телеграма
+      if (shop.owned.has(m.id) || shop.vip){ toast('«' + m.name + '» куплена ✨'); setMask(m.id); closeSheet(); }
+      else toast('Платёж обрабатывается — маска откроется через минуту');
+    }
+    else if (st === 'failed') toast('Оплата не прошла');
+  } catch(e){ toast('Нет связи с магазином'); }
+  finally { buying = false; }
+}
+function pickMask(m, hint){
+  if (maskOpen(m)){ if (hint) hint.textContent = m.id ? 'Маска «' + m.name + '» — видна всем на твоём видео' : 'Маска — видна всем на твоём видео'; setMask(m.id); return true; }
+  if (shop.vipOnly.has(m.id)){ if (hint) hint.textContent = '👑 «' + m.name + '» — только для VIP'; toast('👑 Только для VIP'); return false; }
+  if (INIT_DATA() && shop.prices[m.id]){ if (hint) hint.textContent = '⭐ «' + m.name + '» — ' + shop.prices[m.id] + ' звёзд'; buyMask(m); return false; }
+  if (hint) hint.textContent = TG && TG.initData ? '«' + m.name + '» пока недоступна' : '⭐ «' + m.name + '» покупается в Телеграме';
+  toast(TG && TG.initData ? 'Эта маска пока недоступна' : 'Платные маски — в Телеграме');
+  return false;
+}
+function maskCard(m, hint, size){
+  const el = document.createElement('div'), open = maskOpen(m), price = shop.prices[m.id];
+  el.className = 'mk' + (open ? '' : ' lock') + (shop.vipOnly.has(m.id) ? ' vip' : ''); el.dataset.id = m.id;
+  const cv = document.createElement('canvas'); cv.width = cv.height = 108;
+  const g = cv.getContext('2d'), f = previewFrame(108);
+  g.translate(108, 0); g.scale(-1, 1);   // превью зеркально, как видео, — текст читается
+  g.translate(15, 24); g.scale(.72, .72);   // уменьшаем: высокие маски (уши, рога) целиком помещаются в карточку
+  g.fillStyle = '#3a3a3a'; g.beginPath(); g.ellipse(f.x, f.y + f.W * 0.55, f.W * 0.5, f.W * 0.62, 0, 0, Math.PI * 2); g.fill();
+  if (m.id) drawMask(g, m.id, f, 0.6, -5);
+  el.append(cv);
+  el.insertAdjacentHTML('beforeend', '<span>' + esc(m.name) + '</span>' + (shop.vipOnly.has(m.id) && !open ? '<b class="vp">VIP</b>' : '') + (open ? '' : '<i>' + (price ? price + '⭐' : '🔒') + '</i>'));
+  el.onclick = () => pickMask(m, hint);
+  return el;
 }
 function buildMaskBar(){
-  const bar = $('maskBar'), st = $('maskStyles'), items = [{id: '', name: 'Без маски', free: true}, ...MASKS.filter(m => !maskStyle || m.style === maskStyle)];
+  const bar = $('maskBar'), st = $('maskStyles'), items = [{id: '', name: 'Без маски'}, ...MASKS.filter(m => !maskStyle || m.style === maskStyle)];
   bar.innerHTML = ''; st.innerHTML = '';
-  for (const [k, n] of [['', 'Все'], ...Object.entries(STYLES)]){
+  const used = new Set(MASKS.map(m => m.style));
+  for (const [k, n] of [['', 'Все'], ...Object.entries(STYLES).filter(([k]) => used.has(k))]){
     const b = document.createElement('button'); b.className = 'sec' + (maskStyle === k ? ' on' : ''); b.textContent = n;
     b.onclick = () => { maskStyle = k; buildMaskBar(); }; st.append(b);
   }
-  $('maskPaid').textContent = beforePaid() ? 'Бесплатно до ' + paidText() + ', потом платно' : '⭐ Платные маски — скоро за звёзды';
-  for (const m of items){
-    const el = document.createElement('div'), open = maskOpen(m);
-    el.className = 'mk' + (open ? '' : ' lock') + (m.vip ? ' vip' : ''); el.dataset.id = m.id;
-    const cv = document.createElement('canvas'); cv.width = cv.height = 108;
-    const g = cv.getContext('2d'), f = previewFrame(108);
-    g.translate(108, 0); g.scale(-1, 1);   // превью зеркально, как видео, — текст читается
-    g.fillStyle = '#3a3a3a'; g.beginPath(); g.ellipse(f.x, f.y + f.W * 0.55, f.W * 0.5, f.W * 0.62, 0, 0, Math.PI * 2); g.fill();
-    if (m.id) drawMask(g, m.id, f, 0.6, -5);
-    el.append(cv); el.insertAdjacentHTML('beforeend', '<span>' + esc(m.name) + '</span>' + (m.vip ? '<b class="vp">VIP</b>' : '') + (open ? '' : '<i>⭐</i>'));
-    el.onclick = () => {
-      if (!open){ $('maskHint').textContent = (m.vip ? '👑 «' + m.name + '» — для VIP' : '⭐ «' + m.name + '» — скоро за звёзды'); return; }
-      $('maskHint').textContent = m.id ? 'Маска «' + m.name + '» — видна всем на твоём видео' : 'Маска — видна всем на твоём видео';
-      setMask(m.id);
-    };
-    bar.append(el);
-  }
-  for (const el of bar.querySelectorAll('.mk')) el.classList.toggle('on', el.dataset.id === maskId);
+  st.style.display = used.size > 1 ? '' : 'none';
+  $('maskPaid').textContent = shop.vip ? '👑 VIP: все маски открыты' : 'Платные маски — за звёзды ⭐ в Телеграме';
+  for (const m of items) bar.append(maskCard(m, $('maskHint')));
+  // панель в игре — те же карточки, без вкладок
+  const sh = $('mkRow'); if (sh){ sh.innerHTML = ''; for (const m of [{id: '', name: 'Без маски'}, ...MASKS]) sh.append(maskCard(m, null)); }
+  for (const el of document.querySelectorAll('.mk')) el.classList.toggle('on', el.dataset.id === maskId);
 }
+function openSheet(){ $('mkSheet').classList.add('on'); const on = $('mkRow').querySelector('.mk.on'); if (on) on.scrollIntoView({inline: 'center', block: 'nearest'}); }
+function closeSheet(){ $('mkSheet').classList.remove('on'); }
 buildMaskBar();
+$('btnMk').onclick = () => $('mkSheet').classList.contains('on') ? closeSheet() : openSheet();
+$('mkClose').onclick = closeSheet;
 
 // ---------- голос: «Рядом» — без звука, «Дистанционно» — голосовая связь ----------
 let voice = false, mic = null, micOn = true, micPending = null;
@@ -786,11 +887,12 @@ function fallbackTick(){
   if (!room || !stream) return;
   const now = Date.now(), viaRelay = srvUp();
   // кому-то нужны мои кадры: через сервер 320 px ~10 в секунду, иначе через MQTT 160 px ~4 в секунду
-  if (now - needMe < 7000 && now - lastFb >= (viaRelay ? RL_MS : FB_MS)){
-    const v = maskId && outCv ? outCv : $('cam'), w = viaRelay ? 320 : 160, vw = v.videoWidth || v.width, vh = v.videoHeight || v.height;
+  if (now - needMe < 7000 && now - lastFb >= (viaRelay ? (fbCfg && fbCfg.fps ? 1000 / fbCfg.fps : roster.length > 5 ? 100 : RL_MS) : FB_MS)){
+    const v = maskId && outCv ? outCv : $('cam'), w = viaRelay ? (fbCfg && fbCfg.w || (roster.length > 5 ? 192 : 320)) : 160, vw = v.videoWidth || v.width, vh = v.videoHeight || v.height;
     if (vw){
       lastFb = now; fbCv.width = w; fbCv.height = Math.round(w * vh / vw); fbG.drawImage(v, 0, 0, fbCv.width, fbCv.height);
-      const d = fbCv.toDataURL('image/jpeg', viaRelay ? 0.6 : 0.55);
+      let q = viaRelay ? (fbCfg && fbCfg.q || 0.6) : 0.55, d = fbCv.toDataURL('image/jpeg', q);
+      if (viaRelay && fbCfg && fbCfg.max) for (let i = 0; i < 3 && d.length + 60 > fbCfg.max; i++){ q *= 0.75; d = fbCv.toDataURL('image/jpeg', q); }
       pub('x', {type:'fr', d}, 0);
     }
   }
@@ -858,7 +960,7 @@ setInterval(fallbackTick, RL_MS);
 // ---------- видео всех игроков (как FaceTime) ----------
 // Сначала каждый звонит каждому напрямую. Если гость↔гость не соединились за 3 с (сотовый NAT),
 // гость просит создателя переслать ему видео этого игрока: с создателем связь есть у всех.
-window.__nu = {dbg, decision: () => lastDecision, origin: () => Date.now() - performance.now(), skewMs: CLOCK_SKEW, hostNow: () => clk() + (isHost ? 0 : clkOff), clkInfo: () => ({off: Math.round(clkOff), rtt: Math.round(clkRtt), n: clkSamples.length}), simSmile: tt => reportSmile(snapshot(), 'тест', clk() + (tt - Date.now())), duck: reset => { const r = {minDb: +duckMin.toFixed(1), gainDb: +duckDb.toFixed(1), myDb: +myDb.toFixed(1), remDb: +remDb.toFixed(1), active: !!duck}; if (reset) duckMin = 0; return r; }, smileOf, thr: base => Math.max(SMILE_MIN, base + SMILE_OVER), aud: () => roster.filter(r => r.id !== myId).map(r => audioFlowing(r.id) ? 'rtc' : Date.now() - (pcmLast.get(r.id) || 0) < 3000 ? 'pcm' : 0), get srv(){ return srvUp(); }, get fps(){ return detFps; }, out: () => outCv ? outCv.toDataURL('image/png') : '', mask: id => setMask(id)};   // для тестов
+window.__nu = {dbg, decision: () => lastDecision, origin: () => Date.now() - performance.now(), skewMs: CLOCK_SKEW, hostNow: () => clk() + (isHost ? 0 : clkOff), clkInfo: () => ({off: Math.round(clkOff), rtt: Math.round(clkRtt), n: clkSamples.length}), simSmile: tt => reportSmile(snapshot(), 'тест', clk() + (tt - Date.now())), duck: reset => { const r = {minDb: +duckMin.toFixed(1), gainDb: +duckDb.toFixed(1), myDb: +myDb.toFixed(1), remDb: +remDb.toFixed(1), active: !!duck}; if (reset) duckMin = 0; return r; }, smileOf, thr: base => Math.max(SMILE_MIN, base + SMILE_OVER), aud: () => roster.filter(r => r.id !== myId).map(r => audioFlowing(r.id) ? 'rtc' : Date.now() - (pcmLast.get(r.id) || 0) < 3000 ? 'pcm' : 0), get srv(){ return srvUp(); }, get fps(){ return detFps; }, out: () => outCv ? outCv.toDataURL('image/png') : '', mask: id => setMask(id), recDraw: () => { const g = document.createElement('canvas').getContext('2d'); g.canvas.width = g.canvas.height = 200; const ok = recDrawCover(g, $('cam'), 0, 0, 200, 200, true); return [ok, ...g.getImageData(100, 100, 1, 1).data, $('cam').videoWidth, $('cam').currentTime]; }, recDbg: () => { const c = $('cam'), t = document.querySelector('.tile[data-id="me"]'); return {w: c.videoWidth, rs: c.readyState, p: c.paused, disp: getComputedStyle(c).display, rect: recRects.map(r => [r.t.dataset.id, Math.round(r.x), Math.round(r.y), Math.round(r.w), Math.round(r.h)]), px: rec ? [...rec.g.getImageData(100, 100, 1, 1).data] : null, mask: maskId, out: !!outCv}; }, recInfo: () => rec ? {bytes: rec.bytes, n: rec.chunks.length, st: rec.mr.state, stopping: !!rec.stopping, ms: Date.now() - rec.t0, mime: rec.mime} : null};   // для тестов
 const NOMESH = new URLSearchParams(location.search).has('nomesh');   // для теста запасного пути
 const remote = new Map();    // id -> MediaStream, пришедший напрямую
 const relays = new Map();    // гость: id -> звонок-пересылка; создатель: 'гость|id' -> звонок
@@ -899,8 +1001,9 @@ function liveTile(id){ const t = tileOf(id); return !!t && t.classList.contains(
 function capSenders(c){
   try { for (const sd of c.peerConnection.getSenders()) if (sd.track && sd.track.kind === 'video'){
     const p = sd.getParameters(); if (!p.encodings || !p.encodings.length) p.encodings = [{}];
-    const many = roster.length > 3;
-    p.encodings[0].maxBitrate = many ? 150000 : 300000; p.encodings[0].maxFramerate = 15; p.encodings[0].scaleResolutionDownBy = many ? 1.5 : 1;
+    // 7 исходящих потоков при 8 игроках: чем больше людей, тем меньше картинка и кадров
+    const n = roster.length, tier = n > 5 ? 2 : n > 3 ? 1 : 0;
+    p.encodings[0].maxBitrate = [300000, 150000, 70000][tier]; p.encodings[0].maxFramerate = [15, 15, 10][tier]; p.encodings[0].scaleResolutionDownBy = [1, 1.5, 2][tier];
     sd.setParameters(p).catch(() => {});
   } } catch(e){}
 }
@@ -1038,6 +1141,7 @@ function reportSmile(photo, why, onset){
 const TIE_WINDOW_MS = 1000;
 let hostStart = 0, loserTaken = false, cands = [], lastDecision = [];
 function hostGotSmile(id, name, photo, at, why){
+  if (randomMode){ randSmile(id, name, photo, at, why); return; }
   if (loserTaken || phase !== 'run') return;
   if (typeof photo !== 'string' || !photo.startsWith('data:image/jpeg')) photo = '';
   if (typeof at !== 'number' || !isFinite(at)) at = clk();
@@ -1069,6 +1173,7 @@ function handle(msg){
     $('viewers').textContent = roster.length;
     const ready = roster.filter(p => p.ready).length, all = ready === roster.length;
     $('btnStart').disabled = !all;
+    if (randomMode) randLobby(all);
     $('btnStart').textContent = all ? 'Начать эфир' : 'Ждём, пока все сфоткаются (' + ready + '/' + roster.length + ')';
     syncCalls();
     hostPh = msg.ph;
@@ -1080,6 +1185,9 @@ function handle(msg){
   if (msg.type === 'react') flyEmoji(msg.e);
   if (msg.type === 'feed') feed(msg.name, msg.text);
   if (msg.type === 'loser') showLoser(msg);
+  if (msg.type === 'rec') recIndicator(msg);
+  if (msg.type === 'rout') randOut(msg);
+  if (msg.type === 'rfinal') randFinal(msg);
   if (msg.type === 'reset'){ phase = 'idle'; $('pv').play().catch(()=>{}); show('game'); $('clock').textContent = '0:00.0'; $('status').textContent = 'Готов. Ждём старт'; if (isHost) showHostLobby(); else show('lobby'); }
 }
 
@@ -1087,10 +1195,11 @@ function startRound(){
   show('game');
   initCam().catch(() => {});
   phase = 'prep'; sentSmile = false; smileSince = 0; smileFrames = 0; sBuf = [];
+  iAmOut = false; outSet.clear(); outAt.clear(); for (const t of document.querySelectorAll('.tile.out')) t.classList.remove('out');
   for (const v of document.querySelectorAll('#grid video')) v.play().catch(() => {});
-  const pa = $('prepAv'); pa.className = '';
+  const pa = $('prepAv'); pa.className = roster.length > 4 ? 'many' : '';
   pa.innerHTML = roster.map((p, i) => '<div class="pa" style="animation-delay:' + (i*0.12) + 's,' + (0.6 + i*0.12) + 's"><div class="ring"><b>' + avHtml(p) + '</b></div><span>' + esc(p.name) + '</span></div>').join('');
-  void pa.offsetWidth; pa.className = 'in';
+  void pa.offsetWidth; pa.className = roster.length > 4 ? 'in many' : 'in';
   $('clock').textContent = '0:00.0';
   const p = $('prep'); p.style.display = 'flex';
   $('feed').innerHTML = ''; $('livePill').style.visibility = 'hidden'; p.classList.remove('go');
@@ -1102,7 +1211,7 @@ function startRound(){
     if (n > 0){ p.textContent = n; return; }
     if (n === 0){ p.textContent = 'GO'; p.classList.add('go'); pa.className = 'out'; return; }
     clearInterval(iv); p.style.display = 'none'; pa.innerHTML = '';
-    t0 = performance.now(); if (isHost){ hostStart = t0 + CLOCK_SKEW; loserTaken = false; cands = []; }
+    t0 = performance.now(); if (isHost){ hostStart = t0 + CLOCK_SKEW; loserTaken = false; cands = []; finalT = 0; }
     phase = 'run'; $('livePill').style.visibility = 'visible';
     feed('эфир', ' начался. Кто первый улыбнётся — проиграл 😐 Тапай по экрану, чтобы рассмешить');
   }, 1000);
@@ -1148,7 +1257,7 @@ function showIntrigue(m){
   })();
 }
 function showLoser(m){
-  phase = 'done';
+  phase = 'done'; if (rec) setTimeout(recStop, 12000);   // запись захватывает отсчёт и показ проигравшего, потом сама останавливается
   show('res');
   $('reveal').style.display = 'none'; $('intr').style.display = 'none';
   if (m.intrigue && m.intrigue.length > 1){ $('cd').style.display = 'none'; showIntrigue(m); return; }
@@ -1190,18 +1299,27 @@ async function joinRoom(){
   myName = getName();
   const code = pickCode($('code').value);
   if (!/^[A-Z]{4}$/.test(code)){ $('homeErr').textContent = 'Введи код из 4 букв'; return; }
-  isHost = false; inRoom = false;
   await prepareDevice();
+  await joinCode(code);
+}
+async function joinCode(code){
+  isHost = false; inRoom = false;
   $('status').textContent = 'Подключаюсь к комнате ' + code + '…';
   ep = 0;
   await netOpen(code, 'h', {type:'bye', mid: rid(), from: myId});
   // зовём создателя, пока он не впишет нас в лобби
   const ok = await new Promise(res => {
-    joinDone = () => res(true);
+    joinDone = v => res(v === false ? 'full' : true);
     const t0j = Date.now();
-    (function knock(){ if (inRoom) return; if (Date.now() - t0j > 15000) return res(false); lastHello = 0; hello(); setTimeout(knock, 2000); })();
+    (function knock(){ if (inRoom) return; if (Date.now() - t0j > (randomMode ? 30000 : 15000)) return res(false); lastHello = 0; hello(); setTimeout(knock, 2000); })();
   });
   joinDone = null;
+  if (ok === 'full'){
+    netClose(); room = ''; show('home');
+    $('homeErr').textContent = 'В комнате ' + code + ' уже ' + MAX_PLAYERS + ' игроков — больше не влезает';
+    return;
+  }
+  if (!ok && randomMode){ randLeave(); show('home'); $('homeErr').textContent = 'Игра не собралась — ведущий не ответил. Попробуй ещё раз'; return; }
   if (!ok){
     netClose(); room = ''; show('home');
     $('homeErr').textContent = 'Комната ' + code + ' не отвечает. Проверь код — или создатель закрыл игру';
@@ -1211,9 +1329,246 @@ async function joinRoom(){
   $('roomCode').textContent = code;
   $('lobbyHint').textContent = 'Ждём, пока создатель нажмёт СТАРТ';
   $('btnStart').style.display = 'none';
+  if (randomMode) randLobbyUi();
   if (!spectate()) show('lobby');
   startVideo();
 }
+
+
+// ---------- режим «Случайные игроки»: очередь на сервере, 3–8 человек, игра на выбывание до победителя ----------
+const QS = new URLSearchParams(location.search);
+const MATCH_URL = QS.get('match') || 'wss://' + SRV_HOST + '/match', INIT_DATA = () => QS.get('init') || (TG && TG.initData) || '';
+let randomMode = false, mws = null, mwsWant = false, queueT = 0, queueAt = 0, iAmOut = false, finalT = 0, autoT = 0, matchInfo = null;
+const outSet = new Set(), outAt = new Map();
+const age18 = () => { try { return localStorage.getItem('nu_18') === '1'; } catch(e){ return false; } };
+const tileById = id => id === myId ? document.querySelector('.tile[data-id="me"]') : tileOf(id);
+function randLeave(){
+  mwsWant = false; clearInterval(queueT); clearTimeout(autoT); autoT = 0;
+  if (mws){ try { mws.send(JSON.stringify({t: 'leave'})); } catch(e){} try { mws.close(); } catch(e){} mws = null; }
+  try { if (room) pub(isHost ? 'all' : 'h', {type: isHost ? 'gone' : 'bye'}); } catch(e){}
+  netClose(); room = ''; roomTok = ''; inRoom = false; randomMode = false; matchInfo = null; outSet.clear(); outAt.clear(); iAmOut = false;
+  if (peer && !peer.destroyed){ try { peer.destroy(); } catch(e){} peer = null; }
+  for (const c of calls.values()) try { c.close(); } catch(e){} calls.clear();
+  document.querySelectorAll('#grid .tile:not([data-id="me"])').forEach(t => t.remove()); layoutGrid();
+  phase = 'idle'; players.clear(); roster = [];
+  $('modes').style.display = ''; $('btnInvite').style.display = ''; $('btnCopy').style.display = ''; $('roomCode').style.display = '';
+}
+function openMatch(){
+  const init = INIT_DATA();
+  mwsWant = true; if (!queueAt) queueAt = Date.now();
+  const ws = mws = new WebSocket(MATCH_URL + (MATCH_URL.includes('?') ? '&' : '?') + 'initData=' + encodeURIComponent(init));
+  ws.onopen = () => { $('qErr').textContent = ''; ws.send(JSON.stringify({t: 'queue', id: myId, name: myName})); };
+  ws.onmessage = ev => {
+    let m; try { m = JSON.parse(ev.data); } catch(e){ return; }
+    if (!m || mws !== ws) return;
+    if (m.t === 'queue'){ $('qCount').textContent = 'В очереди: ' + m.n; $('qHint').textContent = 'Игра начнётся, когда наберётся ' + (m.need || 3) + '–' + (m.max || 8) + ' человек (максимум через 2 минуты)'; }
+    else if (m.t === 'banned'){ mwsWant = false; randLeave(); show('home'); $('homeErr').textContent = 'Случайная игра для тебя закрыта до ' + new Date((m.until || 0) * 1000).toLocaleString('ru-RU', {day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit'}) + ' (жалобы игроков)'; }
+    else if (m.t === 'match') matchStart(m);
+    else if (m.t === 'err'){ $('qErr').textContent = m.e === 'initData' ? 'Нужен Телеграм: открой игру из @' + TG_BOT : 'Ошибка: ' + m.e; }
+    else if (m.t === 'reported'){ toast('Жалоба отправлена. Спасибо!'); }
+  };
+  ws.onclose = () => { if (mws === ws){ mws = null; if (mwsWant){ if ($('queue').classList.contains('on')) $('qErr').textContent = 'Связь пропала, подключаюсь…'; setTimeout(() => { if (mwsWant && !mws) openMatch(); }, 2000); } } };
+  ws.onerror = () => {};
+}
+async function playRandom(){
+  if (!INIT_DATA()){ $('homeErr').textContent = 'Случайная игра работает в Телеграме: открой игру через @' + TG_BOT; return; }
+  if (!age18()){ show('age'); return; }
+  myName = getName(); randomMode = true;
+  try { await prepareDevice(); } catch(e){ randomMode = false; throw e; }
+  queueAt = 0; $('qCount').textContent = 'В очереди: 1'; $('qErr').textContent = ''; $('qTitle').textContent = 'Ищем игроков…';
+  show('queue'); openMatch();
+  clearInterval(queueT); queueT = setInterval(() => { const w = (Date.now() - queueAt) / 1000; $('qBar').style.width = Math.min(100, w / 1.2) + '%'; $('qTitle').textContent = 'Ищем игроков… ' + Math.floor(w / 60) + ':' + String(Math.floor(w % 60)).padStart(2, '0'); }, 500);
+}
+async function matchStart(m){
+  clearInterval(queueT); mwsWant = true; matchInfo = m; roomTok = m.tok || '';
+  try {
+    if (m.host === myId){
+      isHost = true; inRoom = false; hostId = myId; ep = 0;
+      await netOpen(m.room, 'all', {type: 'gone', mid: rid()});
+      players.clear(); players.set(myId, {name: myName, avatar: myAvatar, ready: myReady, loss: 0, v: vidUp(), seen: Infinity});
+      $('roomCode').textContent = m.room; showHostLobby(); randLobbyUi(); startVideo();
+    } else { await joinCode(m.room); }
+  } catch(e){ randLeave(); show('home'); $('homeErr').textContent = 'Не удалось войти в игру: ' + ((e && e.message) || e); }
+}
+function randLobbyUi(){
+  $('lobbyHint').textContent = 'Сфоткайся — игра начнётся сама, когда все будут готовы';
+  $('btnInvite').style.display = 'none'; $('btnCopy').style.display = 'none'; $('modes').style.display = 'none'; $('btnStart').style.display = 'none'; $('roomCode').style.display = 'none';
+  $('modeHint').textContent = '🎲 Случайная игра: без голоса, выбывает тот, кто улыбнулся. Остаётся последний';
+}
+function randLobby(all){
+  if (!isHost || phase !== 'idle') return;
+  clearTimeout(autoT);
+  autoT = setTimeout(() => { autoT = 0; if (phase === 'idle' && randomMode && players.size >= 2) broadcast({type: 'start'}); }, all ? 1500 : 40000);
+}
+function randSmile(id, name, photo, at, why){
+  if (phase !== 'run' || finalT === -1 || outSet.has(id) || !players.has(id)) return;
+  if (typeof at !== 'number' || !isFinite(at)) at = clk();
+  outSet.add(id); outAt.set(id, at);
+  const left = [...players.keys()].filter(i => !outSet.has(i));
+  broadcast({type: 'rout', id, name, why: why || '', left: left.length});
+  if (left.length <= 1 && !finalT){
+    finalT = setTimeout(() => {   // последние двое могли улыбнуться почти вместе — выигрывает тот, кто улыбнулся позже
+      finalT = -1;
+      const alive = [...players.keys()].filter(i => !outSet.has(i));
+      let w = alive[0] || [...outAt.entries()].sort((a, b) => b[1] - a[1])[0][0];
+      const p = players.get(w) || {};
+      broadcast({type: 'rfinal', winner: w, name: p.name || '?', avatar: p.avatar || '', ms: Math.max(1, clk() - hostStart)});
+    }, TIE_WINDOW_MS);
+  }
+}
+function randOut(m){
+  outSet.add(m.id);
+  const t = tileById(m.id); if (t) t.classList.add('out');
+  feed('эфир', ' ' + m.name + ' выбыл(а) 😂 Осталось ' + m.left);
+  if (m.id === myId){ iAmOut = true; $('status').textContent = '😂 Ты выбыл(а). Смотри дальше'; try { mws && mws.send(JSON.stringify({t: 'out'})); } catch(e){} play('dun'); }
+  else try { mws && mws.send(JSON.stringify({t: 'vote', id: m.id})); } catch(e){}
+}
+function randFinal(m){
+  phase = 'done'; clearTimeout(autoT); if (rec) setTimeout(recStop, 9000);
+  show('res'); $('cd').style.display = 'none'; $('intr').style.display = 'none';
+  const me = m.winner === myId;
+  $('loserName').textContent = (me ? '🏆 Ты победил(а)!' : '🏆 ' + m.name);
+  $('loserImg').src = m.avatar || ''; $('loserWhy').textContent = me ? 'Никто не продержался дольше' : 'Победитель — продержался(-ась) до конца';
+  $('loserTime').textContent = 'раунд ' + fmt(m.ms || 0);
+  $('reveal').style.display = 'flex';
+  $('btnAgain').style.display = 'block'; $('btnAgain').textContent = '🎲 Играть ещё'; $('againHint').textContent = '';
+  $('btnShare').style.display = 'none'; $('btnReport').style.display = 'block'; $('btnHome').style.display = 'block'; $('repList').style.display = 'none';
+  play('rev'); lastLoser = null;
+}
+$('btnRandom').onclick = guard(playRandom);
+$('btnAge').onclick = () => { try { localStorage.setItem('nu_18', '1'); } catch(e){} show('home'); $('btnRandom').click(); };
+$('btnAgeNo').onclick = () => show('home');
+$('btnQLeave').onclick = () => { randLeave(); show('home'); };
+$('btnHome').onclick = () => { randLeave(); show('home'); };
+$('btnReport').onclick = () => {
+  const l = $('repList'); if (l.style.display === 'flex'){ l.style.display = 'none'; return; }
+  l.innerHTML = ''; l.style.display = 'flex';
+  for (const p of roster.filter(r => r.id !== myId)){ const b = document.createElement('button'); b.textContent = '🚩 ' + p.name; b.onclick = () => { try { mws && mws.send(JSON.stringify({t: 'report', id: p.id, why: 'жалоба после игры'})); } catch(e){} b.disabled = true; b.textContent = '✓ ' + p.name + ' — отправлено'; }; l.append(b); }
+};
+
+// ---------- запись раунда со звуком (только VIP): сетка всех игроков → canvas, голоса и звуки игры → WebAudio → MediaRecorder ----------
+// Запись экрана iPhone при WebRTC идёт без звука, поэтому пишем внутри игры. Готовый файл уходит боту: он присылает его записавшему в личку.
+const REC_W = 540, REC_MAX_S = 150, REC_MAX_B = 24 * 1024 * 1024;
+let rec = null, recRects = [], recPillT = 0;
+function recIndicator(m){
+  const pill = $('recPill'); clearTimeout(recPillT);
+  pill.style.display = m.on ? '' : 'none';
+  if (m.on){ pill.textContent = '● идёт запись'; feed('эфир', ' ' + (m.by || 'кто-то') + ' включил(а) запись раунда 🔴'); recPillT = setTimeout(() => { pill.style.display = 'none'; }, REC_MAX_S * 1000 + 5000); }
+}
+function recAnnounce(on){
+  const m = {type: 'rec', on};
+  if (isHost) broadcast({...m, by: myName, id: myId}); else { toHost(m); recIndicator({on, by: myName}); }
+}
+function recDrawCover(g, el, x, y, w, h, mirror){
+  const sw = el.videoWidth || el.naturalWidth || el.width, sh = el.videoHeight || el.naturalHeight || el.height; if (!sw || !sh) return false;
+  const k = Math.max(w / sw, h / sh), cw = w / k, ch = h / k, cx = (sw - cw) / 2, cy = (sh - ch) / 2;
+  g.save(); g.beginPath(); g.rect(x, y, w, h); g.clip();
+  if (mirror){ g.translate(x + w, y); g.scale(-1, 1); g.drawImage(el, cx, cy, cw, ch, 0, 0, w, h); } else g.drawImage(el, cx, cy, cw, ch, x, y, w, h);
+  g.restore(); return true;
+}
+function recText(g, t, x, y, size, align, alpha){ g.save(); g.globalAlpha = alpha == null ? 1 : alpha; g.font = '800 ' + size + 'px -apple-system,Helvetica,Arial,sans-serif'; g.textAlign = align || 'center'; g.textBaseline = 'middle'; g.lineWidth = size / 6; g.strokeStyle = '#000b'; g.strokeText(t, x, y); g.fillStyle = '#fff'; g.fillText(t, x, y); g.restore(); }
+function recFrame(){
+  if (!rec) return; rec.n++;
+  const {cv, g} = rec, grid = $('grid');
+  if ($('game').classList.contains('on')){
+    const gr = grid.getBoundingClientRect();
+    if (gr.width){ rec.K = REC_W / gr.width; recRects = [...grid.children].map(t => { const r = t.getBoundingClientRect(); return {t, x: (r.left - gr.left) * rec.K, y: (r.top - gr.top) * rec.K, w: r.width * rec.K, h: r.height * rec.K}; });
+      const H = Math.round(gr.height * rec.K / 2) * 2; if (cv.height !== H) cv.height = H; }
+  }
+  g.fillStyle = '#000'; g.fillRect(0, 0, cv.width, cv.height);
+  for (const r of recRects){
+    const id = r.t.dataset.id, vid = r.t.querySelector('video'), fb = r.t.querySelector('img.fb');
+    let ok = false;
+    if (id === 'me') ok = recDrawCover(g, maskId && outCv ? outCv : $('cam'), r.x, r.y, r.w, r.h, !(maskId && outCv) ? true : true);
+    else if (r.t.classList.contains('live') && vid) ok = recDrawCover(g, vid, r.x, r.y, r.w, r.h, true);
+    else if (fb && fb.naturalWidth) ok = recDrawCover(g, fb, r.x, r.y, r.w, r.h, true);
+    const last = rec.last.get(r.t);   // нет свежего кадра (экран итога скрыл видео) — держим последний удачный
+    if (ok){ if (!rec.n || rec.n % 5 === 0){ const c = last || document.createElement('canvas'); c.width = Math.max(1, Math.round(r.w)); c.height = Math.max(1, Math.round(r.h)); c.getContext('2d').drawImage(cv, r.x, r.y, r.w, r.h, 0, 0, c.width, c.height); rec.last.set(r.t, c); } }
+    else if (last) g.drawImage(last, r.x, r.y, r.w, r.h);
+    else { g.fillStyle = '#111'; g.fillRect(r.x, r.y, r.w, r.h); }
+    if (r.t.classList.contains('out')){ g.fillStyle = '#000a'; g.fillRect(r.x, r.y, r.w, r.h); recText(g, '😂 выбыл(а)', r.x + r.w / 2, r.y + r.h / 2, Math.max(14, r.w / 12)); }
+    recText(g, r.t.querySelector('.tname') ? r.t.querySelector('.tname').textContent : '', r.x + 8, r.y + r.h - 14, Math.max(11, Math.min(16, r.w / 14)), 'left');
+  }
+  const f = Math.max(0.6, rec.K || 1);
+  if ($('game').classList.contains('on')){
+    recText(g, $('clock').textContent, cv.width / 2, 24 * f, 22 * f, 'center', .75);
+    if ($('prep').style.display !== 'none' && $('prep').textContent) recText(g, $('prep').textContent, cv.width / 2, cv.height / 2, 150 * f);
+  } else if ($('res').classList.contains('on')){
+    g.fillStyle = '#000b'; g.fillRect(0, 0, cv.width, cv.height);
+    if ($('cd').style.display !== 'none' && $('cd').textContent) recText(g, $('cd').textContent, cv.width / 2, cv.height / 2, 190 * f);
+    if ($('reveal').style.display === 'flex'){
+      recText(g, $('loserWhy').textContent, cv.width / 2, cv.height * 0.22, 20 * f); recText(g, $('loserName').textContent, cv.width / 2, cv.height * 0.3, 36 * f);
+      const im = $('loserImg'), s = Math.min(cv.width * 0.6, cv.height * 0.4);
+      if (im.naturalWidth){ g.save(); g.beginPath(); g.arc(cv.width / 2, cv.height * 0.55, s / 2, 0, 7); g.clip(); recDrawCover(g, im, cv.width / 2 - s / 2, cv.height * 0.55 - s / 2, s, s, false); g.restore(); }
+      recText(g, $('loserTime').textContent, cv.width / 2, cv.height * 0.55 + s / 2 + 34 * f, 20 * f);
+    } else if ($('intr').style.display !== 'none'){ recText(g, $('intrTitle').textContent, cv.width / 2, cv.height * 0.3, 28 * f); recText(g, $('intrNum').textContent, cv.width / 2, cv.height * 0.6, 160 * f); }
+  }
+}
+function recTapAudio(){
+  // голоса игроков: напрямую пришедшие потоки + мой микрофон; звуки игры и PCM — через outNode()
+  for (const [id, st] of remote){
+    if (rec.srcs.has(st) || !st.getAudioTracks().length) continue;
+    try { const src = actx.createMediaStreamSource(st); src.connect(recDest); rec.srcs.set(st, src); } catch(e){}
+  }
+  if (mic && !rec.srcs.has(mic)){ try { const src = actx.createMediaStreamSource(mic); src.connect(recDest); rec.srcs.set(mic, src); } catch(e){} }
+}
+async function recStart(from){
+  if (rec || !shop.vip || !INIT_DATA()) return;
+  unlockAudio(); if (!actx) return toast('Звук не включился — нажми ещё раз');
+  const cv = document.createElement('canvas'); cv.width = REC_W; cv.height = Math.round(REC_W * 664 / 390 / 2) * 2;
+  recDest = actx.createMediaStreamDestination(); recTap = null;
+  // телефоны (iOS, Android) пишут mp4 аппаратным кодеком; в десктопном Chrome mp4-кодировщик бывает программным и подвешивает камеру — там webm
+  const mp4 = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4'], webm = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
+  const types = IOS || /Android/i.test(navigator.userAgent) ? [...mp4, ...webm] : [...webm, ...mp4];
+  const okT = types.map((t, i) => [t, i]).filter(([t]) => window.MediaRecorder && MediaRecorder.isTypeSupported(t) && (QS.get('recmime') !== 'webm' || t.includes('webm')));
+  const pick = okT.find(([t, i]) => i >= (from || 0));
+  if (!pick) return toast('Этот телефон не умеет записывать видео');
+  const [mime, ti] = pick;
+  const stream = new MediaStream([...cv.captureStream(15).getVideoTracks(), ...recDest.stream.getAudioTracks()]);
+  let mr; try { mr = new MediaRecorder(stream, {mimeType: mime, videoBitsPerSecond: 900000, audioBitsPerSecond: 64000}); } catch(e){ return toast('Запись не включилась'); }
+  rec = {cv, g: cv.getContext('2d'), mr, chunks: [], bytes: 0, t0: Date.now(), srcs: new Map(), last: new Map(), n: 0, mime, ti, K: 1};
+  mr.ondataavailable = ev => { if (ev.data && ev.data.size){ rec.chunks.push(ev.data); rec.bytes += ev.data.size; if (rec.bytes > REC_MAX_B) recStop(); } };
+  mr.onstop = () => recUpload(rec);
+  mr.onerror = ev => {   // кодировщик не взял формат (например H.264 в браузере без него) — пробуем следующий
+    window.__recErr = String(ev && ev.error || ev);
+    const r = rec; if (!r || r.bytes || r.mr !== mr) return;
+    clearInterval(r.iv); mr.onstop = null; try { mr.stop(); } catch(e){}
+    for (const src of r.srcs.values()) try { src.disconnect(); } catch(e){}
+    rec = null; recDest = null; recTap = null; recStart(r.ti + 1);
+  };
+  recTapAudio(); rec.iv = setInterval(() => { recFrame(); recTapAudio(); if (Date.now() - rec.t0 > REC_MAX_S * 1000) recStop(); }, 66);
+  mr.start(1000);
+  $('btnRec').textContent = '⏹'; $('btnRec').style.background = '#e11'; recAnnounce(true);
+}
+function recStop(){
+  if (!rec || rec.stopping) return; rec.stopping = true; clearInterval(rec.iv);
+  try { rec.mr.stop(); } catch(e){}
+  $('btnRec').textContent = '⏺'; $('btnRec').style.background = ''; recAnnounce(false);
+}
+async function recUpload(r){
+  const mime = (r.mime.split(';')[0]) || 'video/mp4', dur = Math.round((Date.now() - r.t0) / 1000);
+  rec = null; recDest = null; recTap = null;
+  for (const src of r.srcs.values()) try { src.disconnect(); } catch(e){}
+  const blob = new Blob(r.chunks, {type: mime});
+  window.__lastRec = {size: blob.size, mime, dur, err0: window.__recErr || '', n: r.chunks.length};
+  if (!blob.size || dur < 2) return toast('Запись слишком короткая');
+  toast('Отправляю запись боту…');
+  const ERR = {vip: 'Запись — только для VIP', size: 'Видео слишком большое', busy: 'Сервер занят, попробуй через минуту', cooldown: 'Подожди 20 секунд между записями', start_bot: 'Нажми Start у @' + TG_BOT + ', чтобы бот мог прислать видео', tg: 'Телеграм не принял видео', bad: 'Не получилось отправить'};
+  try {
+    const ws = new WebSocket((window.__recBase || WS_BASE) + '/rec?initData=' + encodeURIComponent(INIT_DATA()));
+    ws.binaryType = 'arraybuffer';
+    const done = new Promise((res, rej) => { ws.onmessage = ev => { let m; try { m = JSON.parse(ev.data); } catch(e){ return; } if (m.t === 'ok') res('ok'); else if (m.t === 'sent') res('sent'); else if (m.t === 'err') rej(new Error(m.e)); }; ws.onerror = () => rej(new Error('net')); ws.onclose = () => rej(new Error('net')); });
+    await done;
+    const buf = await blob.arrayBuffer();
+    for (let o = 0; o < buf.byteLength; o += 512 * 1024) ws.send(buf.slice(o, o + 512 * 1024));
+    ws.send(JSON.stringify({t: 'end', mime, dur}));
+    await done.catch(() => {});
+    const fin = await new Promise((res, rej) => { ws.onmessage = ev => { let m; try { m = JSON.parse(ev.data); } catch(e){ return; } if (m.t === 'sent') res(m); else if (m.t === 'err') rej(new Error(m.e)); }; ws.onclose = () => rej(new Error('net')); setTimeout(() => rej(new Error('net')), 60000); });
+    try { ws.close(); } catch(e){}
+    toast('Запись отправлена в личку от бота ✅'); window.__lastRec.sent = true;
+  } catch(e){ toast(ERR[e.message] || 'Не получилось отправить запись'); window.__lastRec.err = e.message; }
+}
+$('btnRec').onclick = () => rec ? recStop() : recStart();
 
 function camHelp(e){
   const n = e && e.name, ua = navigator.userAgent;
@@ -1377,7 +1732,7 @@ $('btnShare').onclick = async () => {
     if (navigator.canShare(data)) await navigator.share(data);
   } catch(e){}
 };
-$('btnAgain').onclick = () => { unlockAudio(); broadcast({type:'reset'}); };
+$('btnAgain').onclick = () => { unlockAudio(); if (randomMode){ randLeave(); randomMode = true; playRandom().catch(e => { show('home'); $('homeErr').textContent = camHelp(e); }); return; } broadcast({type:'reset'}); };
 document.addEventListener('touchend', unlockAudio, {once: true});
 initModel().catch(() => {});   // модель (~10 МБ) грузим сразу на главном экране
 </script>
