@@ -115,6 +115,11 @@
   .mkbtn{width:36px;height:36px;padding:0;border-radius:50%;background:#0008;border:1px solid #fff3;font-size:18px;color:#fff;pointer-events:auto}
   #mkSheet{position:absolute;left:0;right:0;bottom:0;z-index:7;background:#000d;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);padding:6px 0 calc(8px + env(safe-area-inset-bottom));transform:translateY(110%);transition:transform .2s;border-radius:16px 16px 0 0}
   #mkSheet.on{transform:none}
+  #invBox{width:100%;max-width:360px;margin:4px auto 0;background:#151515;border-radius:14px;padding:8px 10px}
+  #invBox .invt{font-size:12px;opacity:.7;margin:4px 0}
+  #frList .fr{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #262626}
+  #frList .fr span{flex:1;text-align:left;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #frList .fr button{width:auto;padding:8px 14px;font-size:14px;margin:0}
   #mkSheet .mkh{display:flex;justify-content:space-between;align-items:center;padding:0 14px 4px;font-size:13px}
   #mkSheet .mkh button{width:30px;height:30px;padding:0;border-radius:50%;background:#262626;color:#fff;font-size:14px}
   #mkRow{display:flex;gap:6px;overflow-x:auto;padding:0 12px;scrollbar-width:none}
@@ -209,6 +214,7 @@
   <div class="bigcode" id="roomCode" title="Нажми — скопировать">----</div>
   <p id="lobbyHint"></p>
   <div class="row"><button class="grad" id="btnInvite">📲 Пригласить</button><button class="sec" id="btnCopy" style="max-width:150px">📋 Код</button></div>
+  <div id="invBox" style="display:none"><p class="invt">Позвать в эту комнату — без кода</p><div id="frList"></div><button class="grad" id="btnLink">📨 Отправить ссылку в чат Телеграма</button><p class="invt" id="invNote">Друг нажмёт ссылку → «Запустить» → «Присоединиться» — и он здесь</p></div>
   <div class="modes" id="modes" style="display:none"><button class="sec on" id="mNear">🤝 Рядом</button><button class="sec" id="mFar">🌍 Дистанционно</button></div>
   <p id="modeHint">Режим: 🤝 рядом — без голоса</p>
   <div class="pvwrap"><video id="pv" playsinline muted autoplay></video><video id="pvMask" playsinline muted autoplay style="display:none"></video></div>
@@ -346,15 +352,35 @@ function unlockAudio(){
     // звук и при выключенном звонке; с открытым микрофоном — play-and-record, иначе iOS уводит звук в разговорный динамик
     if (navigator.audioSession) navigator.audioSession.type = voice ? 'play-and-record' : 'playback';
     if (voice) $('aOut').play().catch(() => {});
-    if (!actx){
-      actx = new (window.AudioContext || window.webkitAudioContext)();
-      for (const [k, url] of [['dun','zvuki/dundun.mp3'], ['rev','zvuki/reveal.mp3']])
-        fetch(url).then(r => r.arrayBuffer()).then(b => actx.decodeAudioData(b)).then(d => { bufs[k] = d; }).catch(() => {});
-    }
+    if (!actx) makeActx(micRate());
     if (actx.state !== 'running') actx.resume();
     const src = actx.createBufferSource(); src.buffer = actx.createBuffer(1, 1, 22050); src.connect(actx.destination); src.start(0);
   } catch(e){}
 }
+function micRate(){ try { return mic && mic.getAudioTracks()[0].getSettings().sampleRate || 0; } catch(e){ return 0; } }
+function makeActx(rate){
+  const AC = window.AudioContext || window.webkitAudioContext;
+  try { actx = rate ? new AC({sampleRate: rate}) : new AC(); } catch(e){ actx = new AC(); }
+  const a = actx;
+  for (const [k, url] of [['dun','zvuki/dundun.mp3'], ['rev','zvuki/reveal.mp3']])
+    fetch(url).then(r => r.arrayBuffer()).then(b => a.decodeAudioData(b)).then(d => { if (actx === a) bufs[k] = d; }).catch(() => {});
+}
+// Частота WebAudio ≠ частоте микрофона (iPhone в режиме разговора переключается на 48 кГц) — пересоздаём контекст:
+// иначе iOS пересэмплирует на лету и звук хрипит. Во время записи не трогаем — допишем на старой частоте.
+function matchRate(){
+  const r = micRate();
+  if (!actx || !r || actx.sampleRate === r || rec) return;
+  const old = actx; actx = null;
+  for (const a of remAn.values()) try { a.cl.stop(); } catch(e){}
+  remAn.clear(); dropSend(); msDest = null; recTap = null;
+  if (pcmNode){ try { pcmSrc.disconnect(); pcmNode.disconnect(); } catch(e){} pcmNode = pcmSrc = pcmMic = null; }
+  try { old.close(); } catch(e){}
+  makeActx(r); if (actx.state !== 'running') actx.resume().catch(() => {});
+}
+// наушники воткнули/вынули, Bluetooth отвалился — микрофон закончился: берём заново и перезваниваем
+let micLostT = 0;
+function micLost(){ clearTimeout(micLostT); micLostT = setTimeout(() => { if (voice && (!mic || mic.getAudioTracks().every(t => t.readyState === 'ended'))) setVoice(true, true); }, 400); }
+try { navigator.mediaDevices.addEventListener('devicechange', micLost); } catch(e){}
 // iOS с открытым микрофоном играет WebAudio в разговорный динамик (у уха), а <audio> — в громкий.
 // Поэтому в режиме голоса весь звук WebAudio идёт через скрытый <audio>.
 let msDest = null;
@@ -668,7 +694,7 @@ function guestNet(m){
   if (m.type === 'lobby'){
     const me = m.players.some(p => p.id === myId);
     if (!me){ hello(); if (!inRoom) return; }
-    else if (!inRoom){ inRoom = true; clockPing(8); if (joinDone) joinDone(); }
+    else if (!inRoom){ inRoom = true; clockPing(8); if (joinDone) joinDone(); seenRoom(room); }
   }
   if (!inRoom) return;
   if (m.type === 'react' && m.by === myId) return;
@@ -806,21 +832,29 @@ function outStream(){   // что отправляем в звонки: каме
 // Пока громко играет чужой голос, а мой микрофон не громче его, мой голос глушим на 26 дБ:
 // это добивает эхо, которое не убрал системный эхоподавитель (свой голос из чужих колонок обратно в их микрофон).
 const DUCK_DB = -26, DUCK_OVER = 3, VOICE_VOL = 0.8;
-let duck = null;   // {mic, src, an, gain, dest, buf}
+let duck = null;   // {mic, src, an, buf} — уровень моего голоса (по копии трека, живой поток не трогаем)
+let ducked = false, duckOffAt = 0;
 const remAn = new Map(), pcmLvl = new Map();
 function rmsDb(an, buf){ an.getFloatTimeDomainData(buf); let e = 0; for (const x of buf) e += x * x; return 10 * Math.log10(e / buf.length + 1e-12); }
 function duckFor(m){
   if (!actx || !m) return null;
   if (duck && duck.mic === m) return duck;
-  if (duck) try { duck.src.disconnect(); } catch(e){}
-  const src = actx.createMediaStreamSource(m), an = actx.createAnalyser(), gain = actx.createGain(), dest = actx.createMediaStreamDestination();
-  an.fftSize = 1024; src.connect(an); src.connect(gain); gain.connect(dest);
-  return (duck = {mic: m, src, an, gain, dest, buf: new Float32Array(1024)});
+  if (duck){ try { duck.src.disconnect(); } catch(e){} for (const t of duck.cl) try { t.stop(); } catch(e){} }
+  const cl = m.getAudioTracks().map(t => t.clone()), src = actx.createMediaStreamSource(new MediaStream(cl)), an = actx.createAnalyser();
+  an.fftSize = 1024; src.connect(an);
+  return (duck = {mic: m, src, an, cl, buf: new Float32Array(1024)});
 }
+// В звонки уходит копия трека микрофона напрямую, мимо WebAudio: на iPhone голос через MediaStreamDestination
+// хрипит и трещит, как только главный поток занят (запись раунда, маски) или частота звука сменилась.
+// «Утка» не крутит громкость, а на время чужой речи выключает эту копию — живой микрофон и запись она не трогает.
+let sendTr = null, sendOf = null;
 function sendTrack(){
-  const d = actx && actx.state === 'running' ? duckFor(mic) : null;   // контекст звука не запущен — шлём микрофон как есть
-  return d ? d.dest.stream.getAudioTracks()[0] : mic.getAudioTracks()[0];
+  if (sendOf !== mic || !sendTr || sendTr.readyState === 'ended'){ if (sendTr) try { sendTr.stop(); } catch(e){} sendOf = mic; sendTr = mic.getAudioTracks()[0].clone(); }
+  sendTr.enabled = micOn && !ducked;
+  duckFor(mic);
+  return sendTr;
 }
+function dropSend(){ if (sendTr) try { sendTr.stop(); } catch(e){} sendTr = sendOf = null; if (duck){ try { duck.src.disconnect(); } catch(e){} for (const t of duck.cl) try { t.stop(); } catch(e){} duck = null; } }
 let duckDb = 0, duckMin = 0, myDb = -120, remDb = -120;
 setInterval(() => {
   if (!voice || !duck || !actx) return;
@@ -830,14 +864,15 @@ setInterval(() => {
     const st = t.querySelector('video').srcObject, id = t.dataset.id;
     if (!st || !st.getAudioTracks().length || t.dataset.mute || !t.classList.contains('live')){ remAn.delete(id); continue; }
     let a = remAn.get(id);
-    if (!a || a.st !== st){ try { const an = actx.createAnalyser(); an.fftSize = 1024; actx.createMediaStreamSource(st).connect(an); remAn.set(id, a = {st, an, buf: new Float32Array(1024)}); } catch(e){ continue; } }
+    if (!a || a.st !== st){ if (a) try { a.cl.stop(); } catch(e){} try { const an = actx.createAnalyser(), cl = st.getAudioTracks()[0].clone(); an.fftSize = 1024; actx.createMediaStreamSource(new MediaStream([cl])).connect(an); remAn.set(id, a = {st, an, cl, buf: new Float32Array(1024)}); } catch(e){ continue; } }
     remDb = Math.max(remDb, rmsDb(a.an, a.buf) + 20 * Math.log10(VOICE_VOL));
   }
   for (const [id, l] of pcmLvl) if (Date.now() - l.t < 300) remDb = Math.max(remDb, l.db);
-  const on = remDb > -50 && myDb < remDb + DUCK_OVER;
-  const target = on ? Math.pow(10, DUCK_DB / 20) : 1;
-  duck.gain.gain.setTargetAtTime(target, actx.currentTime, on ? 0.007 : 0.1);   // атака ~20 мс, отпускание ~300 мс
-  duckDb = 20 * Math.log10(Math.max(1e-6, duck.gain.gain.value)); duckMin = Math.min(duckMin, duckDb);
+  const on = remDb > -50 && myDb < remDb + DUCK_OVER, now = Date.now();
+  // включается сразу (≤25 мс), отпускает через 300 мс тишины чужого голоса
+  if (on){ ducked = true; duckOffAt = now + 300; } else if (ducked && now > duckOffAt) ducked = false;
+  if (sendTr) sendTr.enabled = micOn && !ducked;
+  duckDb = ducked ? DUCK_DB : 0; duckMin = Math.min(duckMin, duckDb);
 }, 25);
 function applyAudio(t){
   const v = t.querySelector('video'), b = t.querySelector('.mic');
@@ -852,7 +887,7 @@ function showMic(){
 function toggleMic(ev){
   if (ev) ev.stopPropagation();
   if (!mic){ setVoice(voice, true); return; }   // повторная попытка дать доступ
-  micOn = !micOn; for (const tr of mic.getAudioTracks()) tr.enabled = micOn; showMic();
+  micOn = !micOn; for (const tr of mic.getAudioTracks()) tr.enabled = micOn; if (sendTr) sendTr.enabled = micOn && !ducked; showMic();
 }
 async function setVoice(on, retry){
   const changed = on !== voice;
@@ -862,11 +897,13 @@ async function setVoice(on, retry){
   try { if (navigator.audioSession) navigator.audioSession.type = on ? 'play-and-record' : 'playback'; } catch(e){}
   if (on && (!mic || retry)){
     // пока микрофон открывается, не отвечаем и не звоним — иначе звонок уйдёт без голоса
-    micPending = navigator.mediaDevices.getUserMedia({audio: {echoCancellation: true, noiseSuppression: true, autoGainControl: true}})
-      .then(m => { mic = m; for (const tr of m.getAudioTracks()) tr.enabled = micOn; }, () => { mic = null; });   // без микрофона играть и слушать других всё равно можно
+    if (mic) for (const tr of mic.getTracks()) tr.stop();
+    dropSend();
+    micPending = navigator.mediaDevices.getUserMedia({audio: {echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1, sampleRate: {ideal: 48000}}})
+      .then(m => { mic = m; for (const tr of m.getAudioTracks()){ tr.enabled = micOn; tr.onended = micLost; } matchRate(); }, () => { mic = null; });   // без микрофона играть и слушать других всё равно можно
     await micPending; micPending = null;
   }
-  if (!on && mic){ for (const tr of mic.getTracks()) tr.stop(); mic = null; }
+  if (!on && mic){ for (const tr of mic.getTracks()) tr.stop(); mic = null; dropSend(); }
   showMic();
   for (const t of document.querySelectorAll('.tile:not([data-id="me"])')) applyAudio(t);
   // состав дорожек поменялся — перезваниваем всем, пульс соберёт сетку заново
@@ -886,7 +923,7 @@ let needMe = 0, lastFb = 0;
 const needAt = new Map(), firstSeen = new Map();
 function frameNet(m){
   if (m.type === 'need' && m.of === myId) needMe = Date.now();
-  if (m.type === 'needA' && m.of === myId) needAMe = Date.now();
+  if (m.type === 'needA' && m.of === myId){ needAMe = Date.now(); pcmSend(); }
   if (m.type === 'pcm') playPcm(m.from, m.d);
   if (m.type === 'fr' && typeof m.d === 'string' && m.d.startsWith('data:image/jpeg')){
     const t = tileOf(m.from); if (!t || t.classList.contains('live')) return;
@@ -935,14 +972,14 @@ function audioFlowing(id){
   return !!st && st.getAudioTracks().some(a => a.readyState === 'live' && !a.muted);
 }
 function pcmSend(){
-  if (!actx || !voice || !mic){ if (pcmNode){ try { pcmSrc.disconnect(); pcmNode.disconnect(); } catch(e){} pcmNode = pcmSrc = pcmMic = null; } return; }
+  if (!actx || !voice || !mic || Date.now() - needAMe > 8000){ if (pcmNode){ try { pcmSrc.disconnect(); pcmNode.disconnect(); } catch(e){} pcmNode = pcmSrc = pcmMic = null; } return; }
   if (pcmNode && pcmMic === mic) return;
   if (pcmNode) try { pcmSrc.disconnect(); pcmNode.disconnect(); } catch(e){}
-  const d = duckFor(mic);
-  pcmMic = mic; pcmSrc = d ? actx.createMediaStreamSource(d.dest.stream) : actx.createMediaStreamSource(mic); pcmNode = actx.createScriptProcessor(4096, 1, 1);
+  // ScriptProcessor живёт, только пока кто-то просит голос через ретранслятор
+  pcmMic = mic; pcmSrc = actx.createMediaStreamSource(mic); pcmNode = actx.createScriptProcessor(4096, 1, 1);
   const mute = actx.createGain(); mute.gain.value = 0;
   pcmNode.onaudioprocess = ev => {
-    if (!micOn || !srvUp() || Date.now() - needAMe > 7000) return;
+    if (!micOn || ducked || !srvUp() || Date.now() - needAMe > 7000) return;
     const inp = ev.inputBuffer.getChannelData(0), k = actx.sampleRate / PCM_RATE, n = Math.floor(inp.length / k), out = new Int16Array(n);
     for (let i = 0; i < n; i++){ const x = inp[Math.floor(i * k)]; out[i] = Math.max(-1, Math.min(1, x)) * 32767; }
     let bin = ''; const u8 = new Uint8Array(out.buffer); for (let i = 0; i < u8.length; i++) bin += String.fromCharCode(u8[i]);
@@ -1033,6 +1070,15 @@ function wireCall(c, id){
   const end = () => { clearTimeout(to); if (calls.get(id) !== c) return; calls.delete(id); remote.delete(id); refreshTile(id); };
   c.on('close', end); c.on('error', end);
 }
+// Opus для голоса: защита от потерь (FEC), без «тишины-пропусков» (DTX рвёт слоги), моно, до 40 кбит/с
+function opusSdp(sdp){
+  const m = /a=rtpmap:(\d+) opus\/48000/i.exec(sdp); if (!m) return sdp;
+  return sdp.replace(new RegExp('a=fmtp:' + m[1] + ' ([^\r\n]*)'), (all, p) => {
+    const o = {}; for (const kv of p.split(';')){ const [k, v] = kv.split('='); if (k) o[k.trim()] = v; }
+    Object.assign(o, {useinbandfec: '1', usedtx: '0', stereo: '0', 'sprop-stereo': '0', maxaveragebitrate: '40000'});
+    return 'a=fmtp:' + m[1] + ' ' + Object.entries(o).map(([k, v]) => k + '=' + v).join(';');
+  });
+}
 function onIncomingCall(c){
   const of = c.metadata && c.metadata.of;
   if (of){   // создатель пересылает видео игрока of
@@ -1045,7 +1091,7 @@ function onIncomingCall(c){
   }
   const id = c.peer.slice(PREFIX.length), old = calls.get(id);
   calls.delete(id); if (old) try { old.close(); } catch(e){}
-  const go = () => { c.answer(outStream()); wireCall(c, id); };
+  const go = () => { c.answer(outStream(), {sdpTransform: opusSdp}); wireCall(c, id); };
   if (micPending) Promise.race([micPending, new Promise(r => setTimeout(r, 4000))]).then(go); else go();
 }
 // создатель: гость g не видит игрока of — шлём ему видео of со своего телефона
@@ -1131,7 +1177,7 @@ function syncCalls(){
   for (const r of roster){
     if (r.id === myId || !r.v || calls.has(r.id) || myId > r.id) continue;
     if (NOMESH && !isHost && r.id !== hostId) continue;
-    wireCall(peer.call(PREFIX + r.id, outStream()), r.id);
+    wireCall(peer.call(PREFIX + r.id, outStream(), {sdpTransform: opusSdp}), r.id);
   }
   if (!isHost) for (const r of roster){
     if (r.id === myId || r.id === hostId || !since.has(r.id) || flowing(remote.get(r.id)) || (relays.has(r.id) && flowing(relays.get(r.id).st))) continue;
@@ -1303,6 +1349,7 @@ async function createRoom(){
   $('roomCode').textContent = code;
   showHostLobby();
   startVideo();
+  seenRoom(code);
 }
 
 async function joinRoom(){
@@ -1482,7 +1529,7 @@ function recText(g, t, x, y, size, align, alpha){ g.save(); g.globalAlpha = alph
 function recFrame(){
   if (!rec) return; rec.n++;
   const {cv, g} = rec, grid = $('grid');
-  if ($('game').classList.contains('on')){
+  if ($('game').classList.contains('on') && (rec.n % 8 === 1 || !recRects.length)){   // раскладку плиток меряем раз в ~0,5 с — замер дёргает перерасчёт страницы
     const gr = grid.getBoundingClientRect();
     if (gr.width){ rec.K = REC_W / gr.width; recRects = [...grid.children].map(t => { const r = t.getBoundingClientRect(); return {t, x: (r.left - gr.left) * rec.K, y: (r.top - gr.top) * rec.K, w: r.width * rec.K, h: r.height * rec.K}; });
       const H = Math.round(gr.height * rec.K / 2) * 2; if (cv.height !== H) cv.height = H; }
@@ -1520,9 +1567,10 @@ function recTapAudio(){
   // голоса игроков: напрямую пришедшие потоки + мой микрофон; звуки игры и PCM — через outNode()
   for (const [id, st] of remote){
     if (rec.srcs.has(st) || !st.getAudioTracks().length) continue;
-    try { const src = actx.createMediaStreamSource(st); src.connect(recDest); rec.srcs.set(st, src); } catch(e){}
+    // копия трека: запись не перехватывает звук, который играет в плитке (на iOS источник WebAudio на живом потоке его глушит)
+    try { const cl = st.getAudioTracks()[0].clone(), src = actx.createMediaStreamSource(new MediaStream([cl])); src.cl = cl; src.connect(recDest); rec.srcs.set(st, src); } catch(e){}
   }
-  if (mic && !rec.srcs.has(mic)){ try { const src = actx.createMediaStreamSource(mic); src.connect(recDest); rec.srcs.set(mic, src); } catch(e){} }
+  if (mic && !rec.srcs.has(mic)){ try { const src = actx.createMediaStreamSource(mic); src.connect(recDest); rec.srcs.set(mic, src); } catch(e){} }   // сам микрофон: «выкл» — тишина и в записи
 }
 async function recStart(from){
   if (rec || !shop.vip || !INIT_DATA()) return;
@@ -1537,7 +1585,7 @@ async function recStart(from){
   if (!pick) return toast('Этот телефон не умеет записывать видео');
   const [mime, ti] = pick;
   const stream = new MediaStream([...cv.captureStream(15).getVideoTracks(), ...recDest.stream.getAudioTracks()]);
-  let mr; try { mr = new MediaRecorder(stream, {mimeType: mime, videoBitsPerSecond: 900000, audioBitsPerSecond: 64000}); } catch(e){ return toast('Запись не включилась'); }
+  let mr; try { mr = new MediaRecorder(stream, {mimeType: mime, videoBitsPerSecond: 900000, audioBitsPerSecond: 96000}); } catch(e){ return toast('Запись не включилась'); }
   rec = {cv, g: cv.getContext('2d'), mr, chunks: [], bytes: 0, t0: Date.now(), srcs: new Map(), last: new Map(), n: 0, mime, ti, K: 1};
   mr.ondataavailable = ev => { if (ev.data && ev.data.size){ rec.chunks.push(ev.data); rec.bytes += ev.data.size; if (rec.bytes > REC_MAX_B) recStop(); } };
   mr.onstop = () => recUpload(rec);
@@ -1545,7 +1593,7 @@ async function recStart(from){
     window.__recErr = String(ev && ev.error || ev);
     const r = rec; if (!r || r.bytes || r.mr !== mr) return;
     clearInterval(r.iv); mr.onstop = null; try { mr.stop(); } catch(e){}
-    for (const src of r.srcs.values()) try { src.disconnect(); } catch(e){}
+    for (const src of r.srcs.values()) try { src.disconnect(); if (src.cl) src.cl.stop(); } catch(e){}
     rec = null; recDest = null; recTap = null; recStart(r.ti + 1);
   };
   recTapAudio(); rec.iv = setInterval(() => { recFrame(); recTapAudio(); if (Date.now() - rec.t0 > REC_MAX_S * 1000) recStop(); }, 66);
@@ -1560,7 +1608,7 @@ function recStop(){
 async function recUpload(r){
   const mime = (r.mime.split(';')[0]) || 'video/mp4', dur = Math.round((Date.now() - r.t0) / 1000);
   rec = null; recDest = null; recTap = null;
-  for (const src of r.srcs.values()) try { src.disconnect(); } catch(e){}
+  for (const src of r.srcs.values()) try { src.disconnect(); if (src.cl) src.cl.stop(); } catch(e){}
   const blob = new Blob(r.chunks, {type: mime});
   window.__lastRec = {size: blob.size, mime, dur, err0: window.__recErr || '', n: r.chunks.length};
   if (!blob.size || dur < 2) return toast('Запись слишком короткая');
@@ -1620,14 +1668,16 @@ if (!$('name').value && TG && TG.initDataUnsafe && TG.initDataUnsafe.user) $('na
 if (INVITE.length === 4){
   $('code').value = INVITE;
   $('btnJoin').className = 'grad'; $('btnPlay').className = 'sec';
-  $('inviteHint').style.display = 'block'; $('inviteHint').textContent = 'Тебя позвали в комнату ' + INVITE + ' — жми «Войти»';
+  $('inviteHint').style.display = 'block'; $('inviteHint').textContent = 'Тебя позвали в комнату ' + INVITE + (TG ? ' — захожу…' : ' — жми «Войти»');
+  // пришёл из бота по приглашению — входим сами; если телефон не дал камеру без нажатия — останется кнопка «Войти»
+  if (TG) setTimeout(() => { if ($('home').classList.contains('on') && !joinBusy && !inRoom) $('btnJoin').click(); }, 700);
 }
 $('btnPlay').onclick = guard(createRoom);
 // ---------- приглашение: Telegram → системное «поделиться» → копия текста ----------
 function buildInvite(code){
-  // TG_APP появится после /newapp — тогда в приглашении будет прямая ссылка с кодом (?startapp=)
-  const url = TG_APP ? 'https://t.me/' + TG_BOT + '/' + TG_APP + '?startapp=' + code : 'https://t.me/' + TG_BOT;
-  const text = 'Го в «Не улыбайся» 😐 Открой @' + TG_BOT + ' → «Играть» → код ' + code;
+  // ссылка на бота с кодом: /start R_КОД — бот присылает кнопку «Присоединиться», игра сразу открывается в этой комнате
+  const url = TG_APP ? 'https://t.me/' + TG_BOT + '/' + TG_APP + '?startapp=' + code : 'https://t.me/' + TG_BOT + '?start=R_' + code;
+  const text = 'Го в «Не улыбайся» 😐 Жми ссылку — и ты сразу в моей комнате';
   return {url, text, full: text + '\n' + url};
 }
 let toastT = 0;
@@ -1658,7 +1708,41 @@ async function copyCode(){
   if (!/^[A-Z]{4}$/.test(code)) return;
   toast(await copyText(code) ? 'Код ' + code + ' скопирован' : 'Код: ' + code);
 }
-$('btnInvite').onclick = () => { invite(); };
+// ---------- приглашение без кода: друзья (с кем уже играл) — бот пишет им сам; новым — ссылка на бота с комнатой ----------
+function seenRoom(code){
+  if (!INIT_DATA() || randomMode || !/^[A-Z]{4}$/.test(code || '')) return;
+  fetch(API + '/seen?initData=' + encodeURIComponent(INIT_DATA()) + '&room=' + code).catch(() => {});
+}
+const invSent = new Map();
+async function loadFriends(){
+  const box = $('frList'); box.innerHTML = '';
+  if (!INIT_DATA()) return;
+  let fr = [];
+  try { const j = await (await fetch(API + '/friends?initData=' + encodeURIComponent(INIT_DATA()))).json(); fr = j.friends || []; } catch(e){}
+  for (const f of fr.slice(0, 12)){
+    const d = document.createElement('div'); d.className = 'fr';
+    d.innerHTML = '<span></span><button class="sec">Позвать</button>'; d.querySelector('span').textContent = f.name || (f.username ? '@' + f.username : 'Друг');
+    const b = d.querySelector('button');
+    if (invSent.get(f.id) === $('roomCode').textContent){ b.textContent = '✅ Позвали'; b.disabled = true; }
+    b.onclick = async () => {
+      b.disabled = true; b.textContent = '…';
+      let j = {}; try { j = await (await fetch(API + '/invite?initData=' + encodeURIComponent(INIT_DATA()) + '&room=' + $('roomCode').textContent + '&to=' + f.id)).json(); } catch(e){}
+      if (j.ok){ b.textContent = '✅ Позвали'; invSent.set(f.id, $('roomCode').textContent); return; }
+      b.disabled = false;
+      b.textContent = j.e === 'blocked' ? 'Не в боте' : j.e === 'rate' ? 'Подожди' : 'Ещё раз';
+      if (j.e === 'blocked') toast('Бот не может написать ' + (f.name || 'другу') + ' — отправь ему ссылку');
+    };
+    box.appendChild(d);
+  }
+  $('invNote').textContent = fr.length ? 'Друзьям из списка бот напишет сам. Новым — ссылка: нажмут «Запустить» → «Присоединиться»' : 'Друг нажмёт ссылку → «Запустить» → «Присоединиться» — и он здесь';
+}
+$('btnInvite').onclick = () => {
+  if (!TG){ invite(); return; }   // в браузере — обычное «поделиться»
+  const box = $('invBox'), on = box.style.display === 'none';
+  box.style.display = on ? 'block' : 'none';
+  if (on) loadFriends();
+};
+$('btnLink').onclick = () => { invite(); };
 $('btnCopy').onclick = copyCode; $('roomCode').onclick = copyCode;
 // ---------- вход по коду: любой регистр, мусор отбрасываем, сам входит, как только код набран ----------
 function pickCode(t){
