@@ -43,7 +43,7 @@
   .me{display:flex;align-items:center;gap:8px;font-weight:700;font-size:14px}
   .me .ring{width:34px;height:34px;padding:2px;animation:none}
   .me .ring b{font-size:14px;border-width:2px}
-  .viewers{display:inline-flex;align-items:center;gap:5px;background:#0006;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);font-weight:700;font-size:13px;padding:4px 8px;border-radius:6px}
+  .viewers{display:inline-flex;align-items:center;gap:5px;background:#000a;font-weight:700;font-size:13px;padding:4px 8px;border-radius:6px}
   .sp{flex:1}
   .hud{position:absolute;left:0;right:0;top:calc(12px + env(safe-area-inset-top));display:flex;flex-direction:column;align-items:center;gap:3px;z-index:2;pointer-events:none}
   #clock{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums;text-shadow:0 1px 6px #000a;line-height:1;opacity:.6}
@@ -113,8 +113,8 @@
   #recPill{animation:blink 1.2s infinite} @keyframes blink{50%{opacity:.45}}
   #sideBtns{position:absolute;right:12px;top:calc(56px + env(safe-area-inset-top));z-index:6;display:flex;flex-direction:column;gap:8px}
   .mkbtn{width:36px;height:36px;padding:0;border-radius:50%;background:#0008;border:1px solid #fff3;font-size:18px;color:#fff;pointer-events:auto}
-  #mkSheet{position:absolute;left:0;right:0;bottom:0;z-index:7;background:#000d;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);padding:6px 0 calc(8px + env(safe-area-inset-bottom));transform:translateY(110%);transition:transform .2s;border-radius:16px 16px 0 0}
-  #mkSheet.on{transform:none}
+  #mkSheet{position:absolute;left:0;right:0;bottom:0;z-index:7;background:#000e;visibility:hidden;padding:6px 0 calc(8px + env(safe-area-inset-bottom));transform:translateY(110%);transition:transform .2s;border-radius:16px 16px 0 0}
+  #mkSheet.on{transform:none;visibility:visible}
   #invBox{width:100%;max-width:360px;margin:4px auto 0;background:#151515;border-radius:14px;padding:8px 10px}
   #invBox .invt{font-size:12px;opacity:.7;margin:4px 0}
   #frList .fr{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #262626}
@@ -293,7 +293,11 @@ const SMILE_BOTH = 0.3;      // оба уголка рта подняты хот
 const SMILE_LAUGH = 0.45;    // смех: оба уголка ≥0,45 и видны верхние зубы — улыбка при любом счёте (прищур и открытый рот её не гасят)
 const SMILE_CORNERS = 0.45;  // лёгкая улыбка без зубов: оба уголка ≥0,45 (и на 0,25 выше своего спокойного лица), рот почти закрыт (стенд Гео 25.10)
 const SMILE_HOLD_MS = 150;   // улыбка держится 0,15 с подряд (по медиане 3 кадров) — проиграл
-const DET_W = 256, DET_MS = 66;   // детектор: кадр 256 px, не чаще 15 раз в секунду — телефон не греется
+const DET_W = 256, DET_MS = 66;   // детектор: кадр 256 px, не чаще 15 раз в секунду
+// Экономия батареи: детектор — самая дорогая часть игры. В раунде 10 раз в секунду, а как только лицо «близко к улыбке» — 15;
+// в подготовке 10, в лобби с маской 12 (маска не дёргается)
+const DET_MS_CALM = 100, DET_MS_MASK = 83;
+let detNear = false, lastClock = '';
 const NOFACE_WARN_MS = 1000, NOFACE_LOSE_MS = 2500; // спрятал лицо = проиграл
 const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
@@ -508,15 +512,16 @@ function loop(){
   const play = phase === 'prep' || phase === 'run';
   if (!play && !maskId) return;   // в лобби детектор крутится, только если надета маска
   const now = performance.now(), v = $('lobby').classList.contains('on') ? $('pv') : $('cam');
-  if (phase === 'run') $('clock').textContent = fmt(now - t0);
-  if (now - lastDet < DET_MS || v.currentTime === lastVideoTime) return;
+  if (phase === 'run'){ const c = fmt(now - t0); if (c !== lastClock){ lastClock = c; $('clock').textContent = c; } }   // пишем в DOM только когда цифра сменилась
+  const per = phase === 'run' ? (detNear ? DET_MS : DET_MS_CALM) : play ? DET_MS_CALM : DET_MS_MASK;
+  if (now - lastDet < per - 4 || v.currentTime === lastVideoTime) return;
   const s = detectRaw(v);
   if (s === undefined) return;
   detFps = detFps ? detFps * 0.9 + 100 / (now - lastDet) : 1000 / DET_MS;   // реальная частота детектора (для отладки)
   lastDet = now; lastVideoTime = v.currentTime;
   if (maskId) drawOut(v, now);
   if (!play) return;
-  if (s !== null) $('meter').style.width = (100 / (1 + Math.exp(-s))) + '%';
+  if (s !== null){ const mw = Math.round(100 / (1 + Math.exp(-s))) + '%'; if ($('meter').style.width !== mw) $('meter').style.width = mw; }
   if (phase !== 'run' || iAmOut) return;
   if (s !== null) dbg.s = Math.max(dbg.s, s);
   if (s === null){
@@ -528,8 +533,9 @@ function loop(){
     return;
   }
   noFaceSince = 0;
-  $('status').textContent = 'Держись…';
+  setText($('status'), 'Держись…');
   const thr = Math.max(SMILE_MIN, baseline + SMILE_OVER);
+  detNear = s > thr - 1.5 || corners > 0.25 || laugh || smileFrames > 0;
   sBuf.push(s); if (sBuf.length > 3) sBuf.shift();
   // сглаживание от одиночных выбросов: при ≥10 кадров/с — медиана 3 кадров, на слабом телефоне (5–8 кадров/с) — худший из двух
   const sorted = sBuf.slice().sort((a, b) => a - b), med = detFps >= 10 ? sorted[sorted.length >> 1] : Math.min(...sBuf.slice(-2));
@@ -1014,7 +1020,10 @@ const relays = new Map();    // гость: id -> звонок-пересылк�
 const since = new Map(), askedAt = new Map();
 function vidUp(){ return !!(peer && peer.open); }
 let hostId = '';
-function layoutGrid(){ const g = $('grid'); g.className = 'n' + g.children.length; }
+// запись в DOM только при изменении: каждая лишняя запись — перерасчёт страницы поверх видео (батарея)
+function setText(el, t){ if (el && el.textContent !== t) el.textContent = t; }
+function setHtml(el, h){ if (el && el._h !== h){ el._h = h; el.innerHTML = h; } }
+function layoutGrid(){ const g = $('grid'), c = 'n' + g.children.length; if (g.className !== c) g.className = c; }
 function tileOf(id){ return document.querySelector('.tile[data-id="' + CSS.escape(id) + '"]'); }
 function ensureTile(id){
   let t = tileOf(id);
@@ -1026,9 +1035,9 @@ function ensureTile(id){
     $('grid').appendChild(t);
   }
   const p = roster.find(r => r.id === id);
-  if (p){ t.querySelector('.tname').textContent = p.name + (p.loss ? ' · 😂' + p.loss : ''); t.querySelector('.ph b').innerHTML = avHtml(p); }
+  if (p){ setText(t.querySelector('.tname'), p.name + (p.loss ? ' · 😂' + p.loss : '')); setHtml(t.querySelector('.ph b'), avHtml(p)); }
   const w = since.get(id);
-  t.querySelector('.ph small').textContent = w && Date.now() - w > 10000 ? 'нет связи' : 'подключаю видео…';
+  setText(t.querySelector('.ph small'), w && Date.now() - w > 10000 ? 'нет связи' : 'подключаю видео…');
   return t;
 }
 // PeerJS отдаёт поток ещё до соединения: картинка реально идёт, только когда видеотрек «размьючен»
@@ -1507,7 +1516,7 @@ $('btnReport').onclick = () => {
 
 // ---------- запись раунда со звуком (только VIP): сетка всех игроков → canvas, голоса и звуки игры → WebAudio → MediaRecorder ----------
 // Запись экрана iPhone при WebRTC идёт без звука, поэтому пишем внутри игры. Готовый файл уходит боту: он присылает его записавшему в личку.
-const REC_W = 540, REC_MAX_S = 150, REC_MAX_B = 24 * 1024 * 1024;
+const REC_W = 540, REC_H = 960, REC_MAX_S = 150, REC_MAX_B = 24 * 1024 * 1024;
 let rec = null, recRects = [], recPillT = 0;
 function recIndicator(m){
   const pill = $('recPill'); clearTimeout(recPillT);
@@ -1531,8 +1540,9 @@ function recFrame(){
   const {cv, g} = rec, grid = $('grid');
   if ($('game').classList.contains('on') && (rec.n % 8 === 1 || !recRects.length)){   // раскладку плиток меряем раз в ~0,5 с — замер дёргает перерасчёт страницы
     const gr = grid.getBoundingClientRect();
-    if (gr.width){ rec.K = REC_W / gr.width; recRects = [...grid.children].map(t => { const r = t.getBoundingClientRect(); return {t, x: (r.left - gr.left) * rec.K, y: (r.top - gr.top) * rec.K, w: r.width * rec.K, h: r.height * rec.K}; });
-      const H = Math.round(gr.height * rec.K / 2) * 2; if (cv.height !== H) cv.height = H; }
+    // размер холста записи НЕ меняем: кодировщик держит первый размер кадра и сплющивает новый. Сетку вписываем в 540×960 с полями
+    if (gr.width && gr.height){ const K = rec.K = Math.min(REC_W / gr.width, REC_H / gr.height), ox = (REC_W - gr.width * K) / 2, oy = (REC_H - gr.height * K) / 2;
+      recRects = [...grid.children].map(t => { const r = t.getBoundingClientRect(); return {t, x: ox + (r.left - gr.left) * K, y: oy + (r.top - gr.top) * K, w: r.width * K, h: r.height * K}; }); }
   }
   g.fillStyle = '#000'; g.fillRect(0, 0, cv.width, cv.height);
   for (const r of recRects){
@@ -1575,7 +1585,7 @@ function recTapAudio(){
 async function recStart(from){
   if (rec || !shop.vip || !INIT_DATA()) return;
   unlockAudio(); if (!actx) return toast('Звук не включился — нажми ещё раз');
-  const cv = document.createElement('canvas'); cv.width = REC_W; cv.height = Math.round(REC_W * 664 / 390 / 2) * 2;
+  const cv = document.createElement('canvas'); cv.width = REC_W; cv.height = REC_H;
   recDest = actx.createMediaStreamDestination(); recTap = null;
   // телефоны (iOS, Android) пишут mp4 аппаратным кодеком; в десктопном Chrome mp4-кодировщик бывает программным и подвешивает камеру — там webm
   const mp4 = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4'], webm = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
