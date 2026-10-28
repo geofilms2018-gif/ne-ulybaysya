@@ -1018,7 +1018,7 @@ setInterval(fallbackTick, RL_MS);
 // ---------- видео всех игроков (как FaceTime) ----------
 // Сначала каждый звонит каждому напрямую. Если гость↔гость не соединились за 3 с (сотовый NAT),
 // гость просит создателя переслать ему видео этого игрока: с создателем связь есть у всех.
-window.__nu = {dbg, decision: () => lastDecision, origin: () => Date.now() - performance.now(), skewMs: CLOCK_SKEW, hostNow: () => clk() + (isHost ? 0 : clkOff), clkInfo: () => ({off: Math.round(clkOff), rtt: Math.round(clkRtt), n: clkSamples.length}), simSmile: tt => reportSmile(snapshot(), 'тест', clk() + (tt - Date.now())), duck: reset => { const r = {minDb: +duckMin.toFixed(1), gainDb: +duckDb.toFixed(1), myDb: +myDb.toFixed(1), remDb: +remDb.toFixed(1), active: !!duck}; if (reset) duckMin = 0; return r; }, lastLoser: () => lastLoser, scoreImg: async src => { const im = new Image(); im.src = src; await im.decode(); const h = Math.round(DET_W * im.naturalHeight / im.naturalWidth); detCv.width = DET_W; detCv.height = h; detG.drawImage(im, 0, 0, DET_W, h); landmarker.detectForVideo(detCv, performance.now()); const r = landmarker.detectForVideo(detCv, performance.now() + 1), bs = r.faceBlendshapes && r.faceBlendshapes[0]; if (!bs) return null; const b = {}; for (const c of bs.categories) b[c.categoryName] = c.score; return {s: smileOf(b), corners: Math.min(b.mouthSmileLeft || 0, b.mouthSmileRight || 0), laugh: isLaugh(b)}; }, probe: () => { if (!landmarker || loopOn && (phase === 'prep' || phase === 'run' || maskId)) return undefined; const s = detectRaw($('cam')); return s == null ? s : {s, corners, laugh, thr: Math.max(SMILE_MIN, baseline + SMILE_OVER), both: SMILE_BOTH, hold: SMILE_HOLD_MS, base: baseline}; }, smileOf, isLaugh, thr: base => Math.max(SMILE_MIN, base + SMILE_OVER), aud: () => roster.filter(r => r.id !== myId).map(r => audioFlowing(r.id) ? 'rtc' : Date.now() - (pcmLast.get(r.id) || 0) < 3000 ? 'pcm' : 0), get srv(){ return srvUp(); }, get fps(){ return detFps; }, out: () => outCv ? outCv.toDataURL('image/png') : '', mask: id => setMask(id), recDraw: () => { const g = document.createElement('canvas').getContext('2d'); g.canvas.width = g.canvas.height = 200; const ok = recDrawCover(g, $('cam'), 0, 0, 200, 200, true); return [ok, ...g.getImageData(100, 100, 1, 1).data, $('cam').videoWidth, $('cam').currentTime]; }, recDbg: () => { const c = $('cam'), t = document.querySelector('.tile[data-id="me"]'); return {w: c.videoWidth, rs: c.readyState, p: c.paused, disp: getComputedStyle(c).display, rect: recRects.map(r => [r.t.dataset.id, Math.round(r.x), Math.round(r.y), Math.round(r.w), Math.round(r.h)]), px: rec ? [...rec.g.getImageData(100, 100, 1, 1).data] : null, mask: maskId, out: !!outCv}; }, recInfo: () => rec ? {bytes: rec.bytes, n: rec.chunks.length, st: rec.mr.state, stopping: !!rec.stopping, ms: Date.now() - rec.t0, mime: rec.mime} : null};   // для тестов
+window.__nu = {dbg, decision: () => lastDecision, origin: () => Date.now() - performance.now(), skewMs: CLOCK_SKEW, hostNow: () => clk() + (isHost ? 0 : clkOff), clkInfo: () => ({off: Math.round(clkOff), rtt: Math.round(clkRtt), n: clkSamples.length}), simSmile: tt => reportSmile(snapshot(), 'тест', clk() + (tt - Date.now())), duck: reset => { const r = {minDb: +duckMin.toFixed(1), gainDb: +duckDb.toFixed(1), myDb: +myDb.toFixed(1), remDb: +remDb.toFixed(1), active: !!duck}; if (reset) duckMin = 0; return r; }, lastLoser: () => lastLoser, scoreImg: async src => { const im = new Image(); im.src = src; await im.decode(); const h = Math.round(DET_W * im.naturalHeight / im.naturalWidth); detCv.width = DET_W; detCv.height = h; detG.drawImage(im, 0, 0, DET_W, h); landmarker.detectForVideo(detCv, performance.now()); const r = landmarker.detectForVideo(detCv, performance.now() + 1), bs = r.faceBlendshapes && r.faceBlendshapes[0]; if (!bs) return null; const b = {}; for (const c of bs.categories) b[c.categoryName] = c.score; return {s: smileOf(b), corners: Math.min(b.mouthSmileLeft || 0, b.mouthSmileRight || 0), laugh: isLaugh(b)}; }, probe: () => { if (!landmarker || loopOn && (phase === 'prep' || phase === 'run' || maskId)) return undefined; const s = detectRaw($('cam')); return s == null ? s : {s, corners, laugh, thr: Math.max(SMILE_MIN, baseline + SMILE_OVER), both: SMILE_BOTH, hold: SMILE_HOLD_MS, base: baseline}; }, smileOf, isLaugh, thr: base => Math.max(SMILE_MIN, base + SMILE_OVER), aud: () => roster.filter(r => r.id !== myId).map(r => audioFlowing(r.id) ? 'rtc' : Date.now() - (pcmLast.get(r.id) || 0) < 3000 ? 'pcm' : 0), get srv(){ return srvUp(); }, get fps(){ return detFps; }, out: () => outCv ? outCv.toDataURL('image/png') : '', mask: id => setMask(id), recDraw: () => { const g = document.createElement('canvas').getContext('2d'); g.canvas.width = g.canvas.height = 200; const ok = recDrawCover(g, $('cam'), 0, 0, 200, 200, true); return [ok, ...g.getImageData(100, 100, 1, 1).data, $('cam').videoWidth, $('cam').currentTime]; }, recDbg: () => { const c = $('cam'), t = document.querySelector('.tile[data-id="me"]'); return {w: c.videoWidth, rs: c.readyState, p: c.paused, disp: getComputedStyle(c).display, rect: recRects.map(r => [r.t.dataset.id, Math.round(r.x), Math.round(r.y), Math.round(r.w), Math.round(r.h)]), px: rec ? [...rec.g.getImageData(100, 100, 1, 1).data] : null, mask: maskId, out: !!outCv}; }, caps: () => [...calls.values()].map(c => ({relay: c.relay, bps: c.peerConnection.getSenders().filter(s => s.track && s.track.kind === 'video').map(s => ((s.getParameters().encodings || [])[0] || {}).maxBitrate)})), recCanvas: () => rec ? rec.cv.toDataURL('image/jpeg', 0.85) : '', recInfo: () => rec ? {bytes: rec.bytes, n: rec.chunks.length, st: rec.mr.state, stopping: !!rec.stopping, ms: Date.now() - rec.t0, mime: rec.mime} : null};   // для тестов
 const NOMESH = new URLSearchParams(location.search).has('nomesh');   // для теста запасного пути
 const remote = new Map();    // id -> MediaStream, пришедший напрямую
 const relays = new Map();    // гость: id -> звонок-пересылка; создатель: 'гость|id' -> звонок
@@ -1058,17 +1058,29 @@ function refreshTile(id){
   layoutGrid();
 }
 function liveTile(id){ const t = tileOf(id); return !!t && t.classList.contains('live'); }
-// видео собеседникам: до 300 кбит/с и 15 кадров — телефон меньше греется
-function capSenders(c){
+// идёт ли звонок через наш TURN (relay с любой стороны) — тогда весь его трафик проходит через сервер
+async function viaRelay(pc){
+  try {
+    const st = await pc.getStats(); let pair = null;
+    st.forEach(r => { if (r.type === 'transport' && r.selectedCandidatePairId) pair = st.get(r.selectedCandidatePairId); });
+    if (!pair) st.forEach(r => { if (r.type === 'candidate-pair' && r.state === 'succeeded' && (r.nominated || r.selected)) pair = r; });
+    const l = pair && st.get(pair.localCandidateId), rm = pair && st.get(pair.remoteCandidateId);
+    return !!(l && l.candidateType === 'relay' || rm && rm.candidateType === 'relay');
+  } catch(e){ return false; }
+}
+// видео собеседникам: до 300 кбит/с и 15 кадров — телефон меньше греется; через TURN — до 200 кбит/с и 12 кадров
+// (нагрузка 28.10: 100 звонков целиком через relay ≈ 100 Мбит/с и ~85 % CPU сервера на 300 кбит/с, на 200 кбит/с — с запасом)
+async function capSenders(c){
+  const relay = await viaRelay(c.peerConnection); c.relay = relay;
   try { for (const sd of c.peerConnection.getSenders()) if (sd.track && sd.track.kind === 'video'){
     const p = sd.getParameters(); if (!p.encodings || !p.encodings.length) p.encodings = [{}];
     // 7 исходящих потоков при 8 игроках: чем больше людей, тем меньше картинка и кадров
     const n = roster.length, tier = n > 5 ? 2 : n > 3 ? 1 : 0;
-    p.encodings[0].maxBitrate = [300000, 150000, 70000][tier]; p.encodings[0].maxFramerate = [15, 15, 10][tier]; p.encodings[0].scaleResolutionDownBy = [1, 1.5, 2][tier];
+    p.encodings[0].maxBitrate = Math.min([300000, 150000, 70000][tier], relay ? 200000 : 1e9); p.encodings[0].maxFramerate = Math.min([15, 15, 10][tier], relay ? 12 : 99); p.encodings[0].scaleResolutionDownBy = [1, 1.5, 2][tier];
     sd.setParameters(p).catch(() => {});
   } } catch(e){}
 }
-function capLater(c){ for (const ms of [1500, 5000]) setTimeout(() => capSenders(c), ms); }
+function capLater(c){ for (const ms of [1500, 5000, 15000]) setTimeout(() => capSenders(c), ms); }
 function relaysOut(){ return isHost ? [...relays.values()] : []; }
 function wireCall(c, id){
   if (!c) return;
@@ -1572,7 +1584,46 @@ function recDrawCover(g, el, x, y, w, h, mirror){
   if (mirror){ g.translate(x + w, y); g.scale(-1, 1); g.drawImage(el, cx, cy, cw, ch, 0, 0, w, h); } else g.drawImage(el, cx, cy, cw, ch, x, y, w, h);
   g.restore(); return true;
 }
-function recText(g, t, x, y, size, align, alpha){ g.save(); g.globalAlpha = alpha == null ? 1 : alpha; g.font = '800 ' + size + 'px -apple-system,Helvetica,Arial,sans-serif'; g.textAlign = align || 'center'; g.textBaseline = 'middle'; g.lineWidth = size / 6; g.strokeStyle = '#000b'; g.strokeText(t, x, y); g.fillStyle = '#fff'; g.fillText(t, x, y); g.restore(); }
+// запись рисуется как экран игры: текст с мягкой тенью (без обводки), большие цифры — градиентом, итог — карточка с рамкой, а не кружок
+const REC_FONT = '-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif', REC_IG = ['#feda75', '#fa7e1e', '#d62976', '#962fbf', '#4f5bd5'];
+function recIg(g, x0, y0, x1, y1){ const gr = g.createLinearGradient(x0, y1, x1, y0); REC_IG.forEach((c, i) => gr.addColorStop(i / 4, c)); return gr; }   // как linear-gradient(45deg, …)
+function recRR(g, x, y, w, h, r){ g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
+function recText(g, t, x, y, size, align, alpha, color, weight){
+  if (!t) return; g.save(); g.globalAlpha = alpha == null ? 1 : alpha; g.font = (weight || 800) + ' ' + size + 'px ' + REC_FONT; g.textAlign = align || 'center'; g.textBaseline = 'middle';
+  g.shadowColor = '#000a'; g.shadowBlur = size / 3; g.shadowOffsetY = size / 14; g.fillStyle = color || '#fff'; g.fillText(t, x, y); g.restore();
+}
+function recBig(g, t, x, y, size){   // цифры отсчёта/интриги: градиент как в игре
+  if (!t) return; g.save(); g.font = '900 ' + size + 'px ' + REC_FONT; g.textAlign = 'center'; g.textBaseline = 'middle';
+  const w = g.measureText(t).width; g.shadowColor = '#000c'; g.shadowBlur = size / 6; g.fillStyle = recIg(g, x - w / 2, y - size / 2, x + w / 2, y + size / 2); g.fillText(t, x, y); g.restore();
+}
+function recClock(g, t, x, y, size){   // таймер: ровные цифры в плашке (каждая в своей клетке — не прыгают)
+  if (!t) return; g.save(); g.font = '800 ' + size + 'px ' + REC_FONT; g.textBaseline = 'middle'; g.textAlign = 'center';
+  const cell = g.measureText('0').width, wOf = c => /\d/.test(c) ? cell : g.measureText(c).width, w = [...t].reduce((a, c) => a + wOf(c), 0), px = size * 0.55, py = size * 0.32;
+  g.fillStyle = '#0008'; recRR(g, x - w / 2 - px, y - size / 2 - py, w + 2 * px, size + 2 * py, (size + 2 * py) / 2); g.fill();
+  g.fillStyle = '#fff'; let cx = x - w / 2; for (const c of t){ const cw = wOf(c); g.fillText(c, cx + cw / 2, y + size * 0.04); cx += cw; } g.restore();
+}
+function recResult(g, cv, f){   // экран «кто улыбнулся» как в игре: фон, имя, карточка-повтор с градиентной рамкой под наклоном, время
+  const bg = g.createRadialGradient(cv.width / 2, cv.height * 0.3, 0, cv.width / 2, cv.height * 0.3, cv.height * 0.65);
+  bg.addColorStop(0, '#3a0a1f'); bg.addColorStop(1, '#000'); g.fillStyle = bg; g.fillRect(0, 0, cv.width, cv.height);
+  const im = $('loserImg'), nw = im.naturalWidth, nh = im.naturalHeight;
+  let w = cv.width * 0.74, h = nw ? w * nh / nw : w; if (h > cv.height * 0.5){ w *= cv.height * 0.5 / h; h = cv.height * 0.5; }
+  const pad = 5 * f, gap = 14 * f, tagH = 22 * f, nameH = 44 * f, total = tagH + gap + nameH + gap + h + 2 * pad + gap + tagH;
+  let y = (cv.height - total) / 2, cx = cv.width / 2;
+  recText(g, $('loserWhy').textContent, cx, y + tagH / 2, 17 * f, 'center', 1, '#a8a8a8', 700); y += tagH + gap;
+  recText(g, $('loserName').textContent.toUpperCase(), cx, y + nameH / 2, 40 * f, 'center', 1, '#fff', 900); y += nameH + gap;
+  const cy = y + h / 2 + pad; g.save(); g.translate(cx, cy); g.rotate(-3 * Math.PI / 180);
+  const W = w + 2 * pad, H = h + 2 * pad;
+  g.save(); g.shadowColor = '#d6297666'; g.shadowBlur = 40 * f; g.shadowOffsetY = 14 * f; g.fillStyle = recIg(g, -W / 2, -H / 2, W / 2, H / 2); recRR(g, -W / 2, -H / 2, W, H, 28 * f); g.fill(); g.restore();
+  g.fillStyle = '#000'; recRR(g, -w / 2, -h / 2, w, h, 24 * f); g.fill();
+  const b = 4 * f; g.save(); recRR(g, -w / 2 + b, -h / 2 + b, w - 2 * b, h - 2 * b, 20 * f); g.clip(); if (nw) g.drawImage(im, -w / 2 + b, -h / 2 + b, w - 2 * b, h - 2 * b); g.restore();
+  const tg = $('replayTag'); if (tg.style.display !== 'none' && tg.textContent){
+    g.font = '800 ' + 13 * f + 'px ' + REC_FONT; const tw = g.measureText(tg.textContent).width;
+    g.fillStyle = '#000b'; recRR(g, -w / 2 + 14 * f, -h / 2 + 12 * f, tw + 16 * f, 22 * f, 6 * f); g.fill();
+    g.fillStyle = '#fff'; g.textAlign = 'left'; g.textBaseline = 'middle'; g.fillText(tg.textContent, -w / 2 + 22 * f, -h / 2 + 23 * f);
+  }
+  g.restore(); y += H + gap;
+  recText(g, $('loserTime').textContent, cx, y + tagH / 2, 17 * f, 'center', 1, '#a8a8a8', 700);
+}
 function recFrame(){
   if (!rec) return; rec.n++;
   const {cv, g} = rec, grid = $('grid');
@@ -1594,21 +1645,20 @@ function recFrame(){
     else if (last) g.drawImage(last, r.x, r.y, r.w, r.h);
     else { g.fillStyle = '#111'; g.fillRect(r.x, r.y, r.w, r.h); }
     if (r.t.classList.contains('out')){ g.fillStyle = '#000a'; g.fillRect(r.x, r.y, r.w, r.h); recText(g, '😂 выбыл(а)', r.x + r.w / 2, r.y + r.h / 2, Math.max(14, r.w / 12)); }
-    recText(g, r.t.querySelector('.tname') ? r.t.querySelector('.tname').textContent : '', r.x + 8, r.y + r.h - 14, Math.max(11, Math.min(16, r.w / 14)), 'left');
+    recText(g, r.t.querySelector('.tname') ? r.t.querySelector('.tname').textContent : '', r.x + 10, r.y + r.h - 16, Math.max(12, Math.min(17, r.w / 14)), 'left', 1, '#fff', 700);
   }
   const f = Math.max(0.6, rec.K || 1);
   if ($('game').classList.contains('on')){
-    recText(g, $('clock').textContent, cv.width / 2, 24 * f, 22 * f, 'center', .75);
-    if ($('prep').style.display !== 'none' && $('prep').textContent) recText(g, $('prep').textContent, cv.width / 2, cv.height / 2, 150 * f);
+    if ($('clock').textContent) recClock(g, $('clock').textContent, cv.width / 2, 26 * f, 18 * f);
+    if ($('prep').style.display !== 'none' && $('prep').textContent) recBig(g, $('prep').textContent, cv.width / 2, cv.height / 2, 150 * f);
   } else if ($('res').classList.contains('on')){
-    g.fillStyle = '#000b'; g.fillRect(0, 0, cv.width, cv.height);
-    if ($('cd').style.display !== 'none' && $('cd').textContent) recText(g, $('cd').textContent, cv.width / 2, cv.height / 2, 190 * f);
-    if ($('reveal').style.display === 'flex'){
-      recText(g, $('loserWhy').textContent, cv.width / 2, cv.height * 0.22, 20 * f); recText(g, $('loserName').textContent, cv.width / 2, cv.height * 0.3, 36 * f);
-      const im = $('loserImg'), s = Math.min(cv.width * 0.6, cv.height * 0.4);
-      if (im.naturalWidth){ g.save(); g.beginPath(); g.arc(cv.width / 2, cv.height * 0.55, s / 2, 0, 7); g.clip(); recDrawCover(g, im, cv.width / 2 - s / 2, cv.height * 0.55 - s / 2, s, s, false); g.restore(); }
-      recText(g, $('loserTime').textContent, cv.width / 2, cv.height * 0.55 + s / 2 + 34 * f, 20 * f);
-    } else if ($('intr').style.display !== 'none'){ recText(g, $('intrTitle').textContent, cv.width / 2, cv.height * 0.3, 28 * f); recText(g, $('intrNum').textContent, cv.width / 2, cv.height * 0.6, 160 * f); }
+    if ($('reveal').style.display === 'flex') recResult(g, cv, f);
+    else {
+      const bg = g.createRadialGradient(cv.width / 2, cv.height * 0.3, 0, cv.width / 2, cv.height * 0.3, cv.height * 0.65); bg.addColorStop(0, '#3a0a1fe6'); bg.addColorStop(1, '#000e');
+      g.fillStyle = bg; g.fillRect(0, 0, cv.width, cv.height);
+      if ($('cd').style.display !== 'none' && $('cd').textContent) recBig(g, $('cd').textContent, cv.width / 2, cv.height / 2, 190 * f);
+      else if ($('intr').style.display !== 'none'){ recText(g, $('intrTitle').textContent, cv.width / 2, cv.height * 0.3, 30 * f, 'center', 1, '#fff', 900); recBig(g, $('intrNum').textContent, cv.width / 2, cv.height * 0.58, 140 * f); }
+    }
   }
 }
 function recTapAudio(){
