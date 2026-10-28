@@ -346,7 +346,7 @@ function getName(){
   let n = $('name').value.trim();
   if (!n){ try { n = localStorage.getItem('nu_name') || ''; } catch(e){} }
   if (!n) n = NICKS[Math.floor(Math.random()*NICKS.length)] + ' ' + (10 + Math.floor(Math.random()*90));
-  try { localStorage.setItem('nu_name', n); } catch(e){}
+  if (!GHOST) try { localStorage.setItem('nu_name', n); } catch(e){}
   return n;
 }
 function show(id){ document.querySelectorAll('.scr').forEach(s => s.classList.toggle('on', s.id === id)); }
@@ -468,7 +468,7 @@ async function prepareDevice(){
   $('status').textContent = 'Готов. Ждём старт';
   $('pv').srcObject = stream; $('pv').play().catch(() => {});
   if (!loopOn){ loopOn = true; requestAnimationFrame(loop); }
-  let sm = ''; try { sm = localStorage.getItem('nu_mask') || ''; } catch(e){}
+  let sm = ''; try { if (!GHOST) sm = localStorage.getItem('nu_mask') || ''; } catch(e){}
   const m = MASKS.find(x => x.id === sm);
   if (m && maskOpen(m) && !maskId) setMask(sm);
 }
@@ -593,6 +593,7 @@ let swsUp = null;
 function srvSend(data){ if (srvUp() && sws.bufferedAmount < 300000){ sws.send(data); return true; } return false; }
 const BROKERS = ['wss://broker.emqx.io:8084/mqtt', 'wss://broker.hivemq.com:8884/mqtt'];
 const rid = () => Math.random().toString(36).slice(2, 12);
+const GHOST = new URLSearchParams(location.search).has('ghost') && (() => { try { return !!parent.__ghost; } catch(e){ return false; } })();   // двойник теста админа (см. ghostStart)
 const myId = rid();
 let room = '', clients = [], onNet = null, inRoom = false, lastHost = 0, lastHello = 0, ep = 0;   // ep — номер ведущего: растёт при смене
 const seen = new Set(), seenQ = [];
@@ -886,7 +887,7 @@ setInterval(() => {
 }, 25);
 function applyAudio(t){
   const v = t.querySelector('video'), b = t.querySelector('.mic');
-  v.muted = !voice || !!t.dataset.mute; v.volume = VOICE_VOL;
+  v.muted = GHOST || !voice || !!t.dataset.mute; v.volume = VOICE_VOL;
   if (!v.muted) v.play().catch(() => {});
   b.textContent = t.dataset.mute ? '🔇' : '🔊';
 }
@@ -1387,7 +1388,7 @@ async function createRoom(){
   isHost = true; inRoom = false;
   await prepareDevice();
   $('status').textContent = 'Создаю комнату…';
-  const code = code4();
+  const code = TEST_HOST || code4(); TEST_HOST = '';   // тест админа из бота: комната с кодом, который выдал бот
   hostId = myId; ep = 0;
   await netOpen(code, 'all', {type:'gone', mid: rid()});
   players.clear();
@@ -1414,7 +1415,7 @@ async function joinCode(code){
   const ok = await new Promise(res => {
     joinDone = v => res(v === false ? 'full' : true);
     const t0j = Date.now();
-    (function knock(){ if (inRoom) return; if (Date.now() - t0j > (randomMode ? 30000 : 15000)) return res(false); lastHello = 0; hello(); setTimeout(knock, 2000); })();
+    (function knock(){ if (inRoom) return; if (Date.now() - t0j > (randomMode ? 30000 : TEST_JOIN ? 120000 : 15000)) return res(false); lastHello = 0; hello(); setTimeout(knock, 2000); })();
   });
   joinDone = null;
   if (ok === 'full'){
@@ -1709,15 +1710,69 @@ if (TG){
 loadVip();
 const TG_START = TG && TG.initDataUnsafe && TG.initDataUnsafe.start_param || '';
 const INVITE = (new URLSearchParams(location.search).get('r') || TG_START || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4);
+// тест админа из бота («🧪 Начать тестирование»): ?h=КОД — это устройство создаёт комнату с кодом КОД, ?r=КОД&t=1 — второе ждёт его до 2 мин; v=1 — сразу звонок
+let TEST_HOST = (QS.get('h') || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4); if (TEST_HOST.length !== 4) TEST_HOST = '';
+const TEST_JOIN = QS.has('t'), TEST_VOICE = QS.get('v') === '1', TEST_GHOST = QS.get('g') === '1';
+if (TEST_HOST){
+  $('inviteHint').style.display = 'block'; $('inviteHint').textContent = '🧪 Тест: создаю комнату ' + TEST_HOST + '…';
+  setTimeout(async () => {
+    if (!$('home').classList.contains('on') || inRoom) return;
+    const code = TEST_HOST; await $('btnPlay').onclick();
+    if (TEST_VOICE && isHost && !voice) $('mFar').click();
+    if (TEST_GHOST && isHost && room === code) ghostStart(code).catch(e => { $('lobbyHint').textContent = '🧪 Двойник не запустился: ' + (e.message || e); });
+  }, 700);
+}
+// «Двойник» (тест «сам с собой» на одном телефоне): невидимый второй игрок в iframe этой же страницы, его камера и микрофон — видео админа
+// с сервера (/ghost, только админу). Видео и звук живут здесь (жест на этой странице включает звук), iframe берёт их вместо getUserMedia.
+// Дальше всё настоящее: вход по коду, звонок через сервер/TURN, детектор улыбки двойника на его видео.
+async function ghostStart(code){
+  $('lobbyHint').textContent = '🧪 Зову двойника…';
+  const r = await fetch(API + '/ghost?initData=' + encodeURIComponent(INIT_DATA()));
+  if (!r.ok) throw new Error(r.status === 403 ? 'не админ' : 'видео ' + r.status);
+  const url = URL.createObjectURL(await r.blob()), buf = await (await fetch(url)).arrayBuffer();
+  const v = document.createElement('video'); v.src = url; v.muted = true; v.loop = true; v.playsInline = true; await v.play();
+  const cv = document.createElement('canvas'); cv.width = cv.height = 360; const g = cv.getContext('2d');
+  setInterval(() => { if (v.readyState >= 2){ const k = Math.min(v.videoWidth, v.videoHeight); g.drawImage(v, (v.videoWidth - k) / 2, (v.videoHeight - k) / 2, k, k, 0, 0, 360, 360); } }, 66);
+  const AC = window.AudioContext || window.webkitAudioContext, ac = new AC(), dst = ac.createMediaStreamDestination();
+  const ab = await new Promise((ok, no) => ac.decodeAudioData(buf, ok, no)).catch(() => null);
+  const play = () => { if (!ab) return; const s = ac.createBufferSource(); s.buffer = ab; s.connect(dst); s.start(0, v.currentTime % ab.duration); s.onended = () => {}; ghost.src = s; };
+  const resume = () => { if (ac.state !== 'running') ac.resume().then(() => { if (!ghost.src) play(); }); };
+  v.addEventListener('seeked', () => { if (ghost.src){ try { ghost.src.stop(); } catch(e){} play(); } });   // круг видео — звук с начала вместе с ним
+  let last = 0; setInterval(() => { if (v.currentTime < last && ghost.src){ try { ghost.src.stop(); } catch(e){} play(); } last = v.currentTime; }, 200);
+  const vs = cv.captureStream(15);
+  const ghost = window.__ghost = {v, src: null, video: () => new MediaStream(vs.getVideoTracks().map(t => t.clone())), audio: () => new MediaStream(dst.stream.getAudioTracks().map(t => t.clone()))};
+  if (ac.state === 'running') play(); else { resume(); for (const ev of ['pointerdown', 'touchend', 'click']) document.addEventListener(ev, resume, {capture: true}); }
+  const f = document.createElement('iframe');
+  f.src = location.pathname + '?r=' + code + '&t=1&ghost=1&n=' + encodeURIComponent('Двойник') + (QS.get('api') ? '&api=' + encodeURIComponent(QS.get('api')) : '') + (QS.get('wsbase') ? '&wsbase=' + encodeURIComponent(QS.get('wsbase')) : '');
+  f.allow = 'autoplay; camera; microphone'; f.id = 'ghostFrame';
+  f.style.cssText = 'position:fixed;left:0;bottom:0;width:4px;height:4px;opacity:0.01;border:0;pointer-events:none;z-index:-1';
+  document.body.appendChild(f);
+  $('lobbyHint').textContent = '🧪 Двойник входит (его видео — твоя запись). Сфоткайся на серьёзном лице и жми СТАРТ';
+}
+if (GHOST){
+  // я — двойник внутри iframe: камера/микрофон — видео админа со страницы-родителя; свой звук не играю (иначе эхо)
+  const G = parent.__ghost;
+  navigator.mediaDevices.getUserMedia = async c => c && c.video ? G.video() : G.audio();
+  $('aOut').muted = true;
+  // фото на серьёзном лице: первые секунды записи; повторяем, пока не «Готово»
+  (async function calib(){
+    while (!$('lobby').classList.contains('on') || !landmarker) await new Promise(r => setTimeout(r, 300));
+    for (let k = 0; k < 20 && !$('faceHint').textContent.startsWith('Готово'); k++){
+      while (!(G.v.currentTime > 1 && G.v.currentTime < 4)) await new Promise(r => setTimeout(r, 200));
+      $('btnFace').click(); await new Promise(r => setTimeout(r, 2500));
+    }
+  })();
+}
 try { $('name').value = localStorage.getItem('nu_name') || ''; } catch(e){}
 if (!$('name').value) $('name').value = (new URLSearchParams(location.search).get('n') || '').slice(0, 14);
+if (GHOST) $('name').value = (QS.get('n') || 'Двойник').slice(0, 14);
 if (!$('name').value && TG && TG.initDataUnsafe && TG.initDataUnsafe.user) $('name').value = String(TG.initDataUnsafe.user.first_name || '').slice(0, 14);
 if (INVITE.length === 4){
   $('code').value = INVITE;
   $('btnJoin').className = 'grad'; $('btnPlay').className = 'sec';
   $('inviteHint').style.display = 'block'; $('inviteHint').textContent = 'Тебя позвали в комнату ' + INVITE + (TG ? ' — захожу…' : ' — жми «Войти»');
   // пришёл из бота по приглашению — входим сами; если телефон не дал камеру без нажатия — останется кнопка «Войти»
-  if (TG) setTimeout(() => { if ($('home').classList.contains('on') && !joinBusy && !inRoom) $('btnJoin').click(); }, 700);
+  if (TG || TEST_JOIN) setTimeout(() => { if ($('home').classList.contains('on') && !joinBusy && !inRoom) $('btnJoin').click(); }, 700);
 }
 $('btnPlay').onclick = guard(createRoom);
 // ---------- приглашение: Telegram → системное «поделиться» → копия текста ----------
