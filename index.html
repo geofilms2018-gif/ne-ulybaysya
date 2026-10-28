@@ -475,13 +475,15 @@ async function prepareDevice(){
 
 const detCv = document.createElement('canvas'), detG = detCv.getContext('2d');
 const dbg = {old: 0, jaw: 0, s: 0};   // максимумы для тестов
+const detStat = {n: 0, ms: 0};   // замер нагрева (?perf=1): сколько раз и сколько мс крутился детектор
 // оценка улыбки 0..1 по уменьшенному кадру; null — лица нет; undefined — кадра нет
 function detectRaw(v){
   if (!landmarker || v.readyState < 2 || !v.videoWidth) return undefined;
   const h = Math.round(DET_W * v.videoHeight / v.videoWidth);
   if (detCv.width !== DET_W || detCv.height !== h){ detCv.width = DET_W; detCv.height = h; }
   detG.drawImage(v, 0, 0, DET_W, h);
-  const r = landmarker.detectForVideo(detCv, performance.now()), bs = r.faceBlendshapes && r.faceBlendshapes[0];
+  const td = performance.now(), r = landmarker.detectForVideo(detCv, td), bs = r.faceBlendshapes && r.faceBlendshapes[0];
+  detStat.n++; detStat.ms += performance.now() - td;
   faceLm = r.faceLandmarks && r.faceLandmarks[0] || null;
   if (!bs) return null;
   const b = {};
@@ -1763,6 +1765,20 @@ const INVITE = (new URLSearchParams(location.search).get('r') || TG_START || '')
 // тест админа из бота («🧪 Начать тестирование»): ?h=КОД — это устройство создаёт комнату с кодом КОД, ?r=КОД&t=1 — второе ждёт его до 2 мин; v=1 — сразу звонок
 let TEST_HOST = (QS.get('h') || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4); if (TEST_HOST.length !== 4) TEST_HOST = '';
 const TEST_JOIN = QS.has('t'), TEST_VOICE = QS.get('v') === '1', TEST_GHOST = QS.get('g') === '1';
+// замер нагрева (?perf=1): раз в 10 с — кадры экрана и камеры, детектор, занятость страницы, видео звонка; соперник получает {type:'perf'}
+if (QS.get('perf') === '1'){
+  let raf = 0, cam = 0, lag = 0, lagMax = 0, tick = performance.now(), t0p = performance.now();
+  (function f(){ raf++; requestAnimationFrame(f); })();
+  (function vf(){ const v = $('cam'); if (v && v.requestVideoFrameCallback) v.requestVideoFrameCallback(() => { cam++; vf(); }); else setTimeout(vf, 1000); })();
+  setInterval(() => { const n = performance.now(), d = Math.max(0, n - tick - 50); lag += d; lagMax = Math.max(lagMax, d); tick = n; }, 50);
+  setInterval(async () => {
+    const s = (performance.now() - t0p) / 1000, out = [];
+    for (const c of calls.values()) try { (await c.peerConnection.getStats()).forEach(r => { if (r.type === 'outbound-rtp' && r.kind === 'video') out.push({fps: r.framesPerSecond, w: r.frameWidth, h: r.frameHeight, ql: r.qualityLimitationReason, enc: r.encoderImplementation}); }); } catch(e){}
+    pub('x', {type: 'perf', ph: phase, raf: Math.round(raf / s), cam: Math.round(cam / s), det: Math.round(detStat.n / s), detMs: detStat.n ? +(detStat.ms / detStat.n).toFixed(1) : 0,
+      busy: Math.round(lag / s / 10), lagMax: Math.round(lagMax), rec: !!rec, calls: calls.size, out});
+    raf = cam = lag = lagMax = 0; detStat.n = detStat.ms = 0; t0p = performance.now();
+  }, 10000);
+}
 if (TEST_HOST){
   $('inviteHint').style.display = 'block'; $('inviteHint').textContent = '🧪 Тест: создаю комнату ' + TEST_HOST + '…';
   setTimeout(async () => {
