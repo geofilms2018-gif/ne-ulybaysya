@@ -165,6 +165,10 @@
   #reveal{display:none;flex-direction:column;align-items:center;gap:12px}
   .phring{padding:5px;border-radius:28px;background:var(--ig);transform:rotate(-3deg);animation:pop .5s;box-shadow:0 20px 60px #d6297666}
   .phring img{display:block;width:74vw;max-width:340px;border-radius:24px;border:4px solid #000}
+  .phring{position:relative}
+  #replayTag{position:absolute;left:14px;top:12px;background:#000b;color:#fff;font:800 13px system-ui;padding:4px 8px;border-radius:6px;letter-spacing:.5px}
+  #loserImg.freeze{animation:freeze .45s ease-out}
+  @keyframes freeze{0%{filter:brightness(2.2) contrast(.8);transform:scale(1.04)}100%{filter:none;transform:none}}
   #loserName{font-size:40px;font-weight:900;text-transform:uppercase;letter-spacing:-.5px}
   .tag{font-size:16px;font-weight:700;color:var(--mut)}
   .err{color:#ed4956}
@@ -259,7 +263,7 @@
   <div id="reveal">
     <div class="tag" id="loserWhy"></div>
     <div id="loserName"></div>
-    <div class="phring"><img id="loserImg" alt=""></div>
+    <div class="phring"><img id="loserImg" alt=""><span id="replayTag" style="display:none"></span></div>
     <div class="tag" id="loserTime"></div>
     <button class="sec" id="btnShare" style="display:none">Поделиться фоткой</button>
     <button class="grad" id="btnAgain" style="display:none">Ещё раз</button>
@@ -512,7 +516,7 @@ function loop(){
   const play = phase === 'prep' || phase === 'run';
   if (!play && !maskId) return;   // в лобби детектор крутится, только если надета маска
   const now = performance.now(), v = $('lobby').classList.contains('on') ? $('pv') : $('cam');
-  if (phase === 'run'){ const c = fmt(now - t0); if (c !== lastClock){ lastClock = c; $('clock').textContent = c; } }   // пишем в DOM только когда цифра сменилась
+  if (phase === 'run'){ const c = fmt(now - t0); if (c !== lastClock){ lastClock = c; $('clock').textContent = c; } if (!iAmOut && !sentSmile) clipGrab(now); }   // пишем в DOM только когда цифра сменилась
   const per = phase === 'run' ? (detNear ? DET_MS : DET_MS_CALM) : play ? DET_MS_CALM : DET_MS_MASK;
   if (now - lastDet < per - 4 || v.currentTime === lastVideoTime) return;
   const s = detectRaw(v);
@@ -543,7 +547,7 @@ function loop(){
     if (!smileFrames++) smileSince = now;
     // длительность = от первого кадра с улыбкой до текущего + длина кадра; на слабом телефоне хватает одного кадра (он и так ≥0,15 с)
     const frameMs = Math.min(200, 1000 / (detFps || 12)), need = frameMs >= SMILE_HOLD_MS ? 1 : 2;
-    if (!sentSmile && smileFrames >= need && now - smileSince + frameMs >= SMILE_HOLD_MS){ sentSmile = true; reportSmile(snapshot(), 'первым(-ой) улыбнулся(-ась)', smileSince + CLOCK_SKEW); }
+    if (!sentSmile && smileFrames >= need && now - smileSince + frameMs >= SMILE_HOLD_MS){ sentSmile = true; clipAt = 0; clipGrab(now); reportSmile(snapshot(), 'первым(-ой) улыбнулся(-ась)', smileSince + CLOCK_SKEW, clipMake(now)); }
   } else {
     smileFrames = 0;
     if (now - lastShotAt > 500){ lastShotAt = now; lastFaceShot = snapshot(); }
@@ -677,7 +681,7 @@ function hostNet(m){
   if (m.type === 'ready'){ p.avatar = okAvatar(m.avatar); p.ready = true; sendLobby(); }
   if (m.type === 'react') broadcast({type:'react', e: String(m.e).slice(0, 4), by: id});
   if (m.type === 'rec') broadcast({type:'rec', on: !!m.on, by: p.name, id});
-  if (m.type === 'smile') hostGotSmile(id, p.name, m.photo, m.at, m.why);
+  if (m.type === 'smile') hostGotSmile(id, p.name, m.photo, m.at, m.why, m.clip);
   if (m.type === 'relay') hostRelay(id, String(m.of));
   if (m.type === 'cp' && typeof m.t0 === 'number') pub('all', {type:'cr', to: id, t0: m.t0, th: clk()});
   if (m.type === 'vid' && !p.v){ p.v = true; sendLobby(); }
@@ -1013,7 +1017,7 @@ setInterval(fallbackTick, RL_MS);
 // ---------- видео всех игроков (как FaceTime) ----------
 // Сначала каждый звонит каждому напрямую. Если гость↔гость не соединились за 3 с (сотовый NAT),
 // гость просит создателя переслать ему видео этого игрока: с создателем связь есть у всех.
-window.__nu = {dbg, decision: () => lastDecision, origin: () => Date.now() - performance.now(), skewMs: CLOCK_SKEW, hostNow: () => clk() + (isHost ? 0 : clkOff), clkInfo: () => ({off: Math.round(clkOff), rtt: Math.round(clkRtt), n: clkSamples.length}), simSmile: tt => reportSmile(snapshot(), 'тест', clk() + (tt - Date.now())), duck: reset => { const r = {minDb: +duckMin.toFixed(1), gainDb: +duckDb.toFixed(1), myDb: +myDb.toFixed(1), remDb: +remDb.toFixed(1), active: !!duck}; if (reset) duckMin = 0; return r; }, probe: () => { if (!landmarker || loopOn && (phase === 'prep' || phase === 'run' || maskId)) return undefined; const s = detectRaw($('cam')); return s == null ? s : {s, corners, laugh, thr: Math.max(SMILE_MIN, baseline + SMILE_OVER), both: SMILE_BOTH, hold: SMILE_HOLD_MS, base: baseline}; }, smileOf, isLaugh, thr: base => Math.max(SMILE_MIN, base + SMILE_OVER), aud: () => roster.filter(r => r.id !== myId).map(r => audioFlowing(r.id) ? 'rtc' : Date.now() - (pcmLast.get(r.id) || 0) < 3000 ? 'pcm' : 0), get srv(){ return srvUp(); }, get fps(){ return detFps; }, out: () => outCv ? outCv.toDataURL('image/png') : '', mask: id => setMask(id), recDraw: () => { const g = document.createElement('canvas').getContext('2d'); g.canvas.width = g.canvas.height = 200; const ok = recDrawCover(g, $('cam'), 0, 0, 200, 200, true); return [ok, ...g.getImageData(100, 100, 1, 1).data, $('cam').videoWidth, $('cam').currentTime]; }, recDbg: () => { const c = $('cam'), t = document.querySelector('.tile[data-id="me"]'); return {w: c.videoWidth, rs: c.readyState, p: c.paused, disp: getComputedStyle(c).display, rect: recRects.map(r => [r.t.dataset.id, Math.round(r.x), Math.round(r.y), Math.round(r.w), Math.round(r.h)]), px: rec ? [...rec.g.getImageData(100, 100, 1, 1).data] : null, mask: maskId, out: !!outCv}; }, recInfo: () => rec ? {bytes: rec.bytes, n: rec.chunks.length, st: rec.mr.state, stopping: !!rec.stopping, ms: Date.now() - rec.t0, mime: rec.mime} : null};   // для тестов
+window.__nu = {dbg, decision: () => lastDecision, origin: () => Date.now() - performance.now(), skewMs: CLOCK_SKEW, hostNow: () => clk() + (isHost ? 0 : clkOff), clkInfo: () => ({off: Math.round(clkOff), rtt: Math.round(clkRtt), n: clkSamples.length}), simSmile: tt => reportSmile(snapshot(), 'тест', clk() + (tt - Date.now())), duck: reset => { const r = {minDb: +duckMin.toFixed(1), gainDb: +duckDb.toFixed(1), myDb: +myDb.toFixed(1), remDb: +remDb.toFixed(1), active: !!duck}; if (reset) duckMin = 0; return r; }, lastLoser: () => lastLoser, scoreImg: async src => { const im = new Image(); im.src = src; await im.decode(); const h = Math.round(DET_W * im.naturalHeight / im.naturalWidth); detCv.width = DET_W; detCv.height = h; detG.drawImage(im, 0, 0, DET_W, h); landmarker.detectForVideo(detCv, performance.now()); const r = landmarker.detectForVideo(detCv, performance.now() + 1), bs = r.faceBlendshapes && r.faceBlendshapes[0]; if (!bs) return null; const b = {}; for (const c of bs.categories) b[c.categoryName] = c.score; return {s: smileOf(b), corners: Math.min(b.mouthSmileLeft || 0, b.mouthSmileRight || 0), laugh: isLaugh(b)}; }, probe: () => { if (!landmarker || loopOn && (phase === 'prep' || phase === 'run' || maskId)) return undefined; const s = detectRaw($('cam')); return s == null ? s : {s, corners, laugh, thr: Math.max(SMILE_MIN, baseline + SMILE_OVER), both: SMILE_BOTH, hold: SMILE_HOLD_MS, base: baseline}; }, smileOf, isLaugh, thr: base => Math.max(SMILE_MIN, base + SMILE_OVER), aud: () => roster.filter(r => r.id !== myId).map(r => audioFlowing(r.id) ? 'rtc' : Date.now() - (pcmLast.get(r.id) || 0) < 3000 ? 'pcm' : 0), get srv(){ return srvUp(); }, get fps(){ return detFps; }, out: () => outCv ? outCv.toDataURL('image/png') : '', mask: id => setMask(id), recDraw: () => { const g = document.createElement('canvas').getContext('2d'); g.canvas.width = g.canvas.height = 200; const ok = recDrawCover(g, $('cam'), 0, 0, 200, 200, true); return [ok, ...g.getImageData(100, 100, 1, 1).data, $('cam').videoWidth, $('cam').currentTime]; }, recDbg: () => { const c = $('cam'), t = document.querySelector('.tile[data-id="me"]'); return {w: c.videoWidth, rs: c.readyState, p: c.paused, disp: getComputedStyle(c).display, rect: recRects.map(r => [r.t.dataset.id, Math.round(r.x), Math.round(r.y), Math.round(r.w), Math.round(r.h)]), px: rec ? [...rec.g.getImageData(100, 100, 1, 1).data] : null, mask: maskId, out: !!outCv}; }, recInfo: () => rec ? {bytes: rec.bytes, n: rec.chunks.length, st: rec.mr.state, stopping: !!rec.stopping, ms: Date.now() - rec.t0, mime: rec.mime} : null};   // для тестов
 const NOMESH = new URLSearchParams(location.search).has('nomesh');   // для теста запасного пути
 const remote = new Map();    // id -> MediaStream, пришедший напрямую
 const relays = new Map();    // гость: id -> звонок-пересылка; создатель: 'гость|id' -> звонок
@@ -1196,22 +1200,55 @@ function syncCalls(){
 }
 
 // onset — момент первого кадра с улыбкой по clk() этого телефона; в сообщении уходит время в шкале ведущего
-function reportSmile(photo, why, onset){
+function reportSmile(photo, why, onset, clip){
   const at = (onset == null ? clk() : onset) + (isHost ? 0 : clkOff);
-  if (isHost) hostGotSmile(myId, myName, photo, at, why);
-  else toHost({type:'smile', photo, at, why});
+  if (isHost) hostGotSmile(myId, myName, photo, at, why, clip);
+  else toHost({type:'smile', photo, at, why, clip});
+}
+// ---------- повтор улыбки: камера последние 3 с кольцом (8 к/с, 200 px, без кодирования на лету);
+// при улыбке — клип 2 с ДО неё (последний кадр — уже улыбка), у всех он проигрывается и замирает стоп-кадром ----------
+const CLIP_FPS = 8, CLIP_W = 200, CLIP_N = 24, CLIP_MS = 2000;
+let clipRing = [], clipAt = 0;
+function clipGrab(now){
+  if (now - clipAt < 1000 / CLIP_FPS - 8) return;
+  const v = $('cam'); if (!v.videoWidth) return;
+  clipAt = now;
+  const c = clipRing.length >= CLIP_N ? clipRing.shift().c : document.createElement('canvas'), h = Math.round(CLIP_W * v.videoHeight / v.videoWidth);
+  if (c.width !== CLIP_W || c.height !== h){ c.width = CLIP_W; c.height = h; }
+  const g = c.getContext('2d'); g.setTransform(-1, 0, 0, 1, CLIP_W, 0); g.drawImage(v, 0, 0, CLIP_W, h);   // зеркально, как фото
+  clipRing.push({t: now, c});
+}
+function clipMake(end){
+  const fr = clipRing.filter(f => f.t >= end - CLIP_MS && f.t <= end + 1).map(f => f.c.toDataURL('image/jpeg', 0.6));
+  let n = 0; while (fr.length && fr.join('').length > 160000 && n++ < 8) fr.splice(0, 2);   // запасной путь (MQTT) — не больше ~160 КБ
+  return fr;
+}
+function okClip(c){ return Array.isArray(c) && c.length <= CLIP_N && c.every(x => typeof x === 'string' && x.startsWith('data:image/jpeg')) && c.join('').length < 200000 ? c : null; }
+let replayT = 0;
+function playReplay(m){
+  clearInterval(replayT);
+  const img = $('loserImg'), tag = $('replayTag'), fr = okClip(m.clip) || [];
+  img.classList.remove('freeze'); window.__replay = {n: fr.length, i: 0, done: fr.length < 4};
+  if (fr.length < 4){ img.src = m.photo; tag.style.display = 'none'; return; }
+  tag.style.display = ''; tag.textContent = '⏪ ПОВТОР'; img.src = fr[0];
+  let i = 0;
+  replayT = setInterval(() => {
+    if (++i < fr.length){ img.src = fr[i]; window.__replay.i = i; return; }
+    clearInterval(replayT); img.src = m.photo || fr[fr.length - 1]; void img.offsetWidth; img.classList.add('freeze');
+    tag.textContent = '📸 СТОП-КАДР'; window.__replay.done = true;
+  }, 1000 / CLIP_FPS);
 }
 
 // ---------- интрига: после первой улыбки ещё TIE_WINDOW_MS принимаем улыбки остальных; проигрывает тот, кто раньше по общей шкале ----------
 const TIE_WINDOW_MS = 1000;
 let hostStart = 0, loserTaken = false, cands = [], lastDecision = [];
-function hostGotSmile(id, name, photo, at, why){
+function hostGotSmile(id, name, photo, at, why, clip){
   if (randomMode){ randSmile(id, name, photo, at, why); return; }
   if (loserTaken || phase !== 'run') return;
   if (typeof photo !== 'string' || !photo.startsWith('data:image/jpeg')) photo = '';
   if (typeof at !== 'number' || !isFinite(at)) at = clk();
   if (cands.some(c => c.id === id)) return;
-  cands.push({id, name, photo, at, why: why || ''});
+  cands.push({id, name, photo, at, why: why || '', clip: okClip(clip)});
   if (cands.length > 1) return;
   setTimeout(() => {
     if (loserTaken) return;
@@ -1219,7 +1256,7 @@ function hostGotSmile(id, name, photo, at, why){
     const all = cands.slice().sort((a, b) => a.at - b.at), first = all[0]; lastDecision = all.map(c => ({n: c.name, at: Math.round(c.at - first.at)}));   // разница меньше погрешности — всё равно побеждает меньшее время
     const p = players.get(first.id); if (p) p.loss = (p.loss || 0) + 1;
     const intrigue = all.length > 1 ? all.map(c => ({id: c.id, name: c.name, photo: c.photo, dt: Math.round(c.at - first.at)})) : null;
-    broadcast({type:'loser', name: first.name, photo: first.photo, ms: Math.max(1, first.at - hostStart), why: first.why, intrigue});
+    broadcast({type:'loser', name: first.name, photo: first.photo, clip: first.clip || null, ms: Math.max(1, first.at - hostStart), why: first.why, intrigue});
     sendLobby();
   }, TIE_WINDOW_MS);
 }
@@ -1276,7 +1313,7 @@ function startRound(){
     if (n > 0){ p.textContent = n; return; }
     if (n === 0){ p.textContent = 'GO'; p.classList.add('go'); pa.className = 'out'; return; }
     clearInterval(iv); p.style.display = 'none'; pa.innerHTML = '';
-    t0 = performance.now(); if (isHost){ hostStart = t0 + CLOCK_SKEW; loserTaken = false; cands = []; finalT = 0; }
+    t0 = performance.now(); clipRing = []; if (isHost){ hostStart = t0 + CLOCK_SKEW; loserTaken = false; cands = []; finalT = 0; }
     phase = 'run'; $('livePill').style.visibility = 'visible';
     feed('эфир', ' начался. Кто первый улыбнётся — проиграл 😐 Тапай по экрану, чтобы рассмешить');
   }, 1000);
@@ -1287,7 +1324,7 @@ const WORDS = {2: 'Оба улыбнулись', 3: 'Трое улыбнулис
 function revealLoser(m){
   $('cd').style.display = 'none'; $('cd').classList.remove('shake'); $('intr').style.display = 'none';
   $('loserName').textContent = m.name;
-  $('loserImg').src = m.photo;
+  playReplay(m);
   $('loserWhy').textContent = '😂 ' + (m.why || 'первым(-ой) улыбнулся(-ась)');
   $('loserTime').textContent = 'продержался(-ась) ' + fmt(m.ms);
   $('reveal').style.display = 'flex';
