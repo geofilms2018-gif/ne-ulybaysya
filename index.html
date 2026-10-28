@@ -1765,8 +1765,32 @@ const INVITE = (new URLSearchParams(location.search).get('r') || TG_START || '')
 // тест админа из бота («🧪 Начать тестирование»): ?h=КОД — это устройство создаёт комнату с кодом КОД, ?r=КОД&t=1 — второе ждёт его до 2 мин; v=1 — сразу звонок
 let TEST_HOST = (QS.get('h') || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4); if (TEST_HOST.length !== 4) TEST_HOST = '';
 const TEST_JOIN = QS.has('t'), TEST_VOICE = QS.get('v') === '1', TEST_GHOST = QS.get('g') === '1';
+// замер нагрева без лица (?sim=1): камера — фото по кругу с лёгким движением, раунды сами; конвейер (детектор, кодек, звонок) как в игре
+// фото — GENKI-4K: 4 спокойных лица по 2,5 с, улыбка на 45-й секунде раунда (раунд кончается, «Ещё раз» — само)
+const SIM = QS.get('sim') === '1';
+if (SIM){
+  const base = new URL('perf/', location.href).href, ld = n => new Promise(r => { const i = new Image(); i.onload = () => r(i); i.onerror = () => r(null); i.src = base + n; });
+  const imgs = Promise.all(['f1.jpg', 'f2.jpg', 'f3.jpg', 'f4.jpg', 's1.jpg'].map(ld));
+  const cv = document.createElement('canvas'); cv.width = 360; cv.height = 480; const g = cv.getContext('2d');
+  let simStream = null;
+  const draw = async () => { const im = await imgs, n = performance.now();
+    const smile = phase === 'run' && n - t0 > 45000, i = smile ? im[4] : im[Math.floor(n / 2500) % 4];
+    if (i){ const k = 1.05 + 0.04 * Math.sin(n / 700), w = cv.height * i.width / i.height * k, h = cv.height * k;
+      g.fillStyle = '#000'; g.fillRect(0, 0, cv.width, cv.height); g.drawImage(i, (cv.width - w) / 2 + 6 * Math.sin(n / 900), (cv.height - h) / 2 + 4 * Math.cos(n / 1100), w, h); } };
+  setInterval(draw, 66);
+  const gum = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+  navigator.mediaDevices.getUserMedia = async c => { if (!c || !c.video) return gum(c);
+    simStream = simStream || cv.captureStream(15); return new MediaStream([simStream.getVideoTracks()[0].clone()]); };
+  const vis = id => { const b = $(id); return b && b.offsetParent !== null && !b.disabled; };
+  let againAt = 0;
+  setInterval(() => {
+    if (vis('btnFace') && !$('faceHint').textContent.startsWith('Готово')) $('btnFace').click();
+    if (isHost && vis('btnStart')) $('btnStart').click();
+    if (isHost && vis('btnAgain')){ againAt = againAt || Date.now() + 6000; if (Date.now() > againAt){ againAt = 0; $('btnAgain').click(); } } else againAt = 0;
+  }, 1000);
+}
 // замер нагрева (?perf=1): раз в 10 с — кадры экрана и камеры, детектор, занятость страницы, видео звонка; соперник получает {type:'perf'}
-if (QS.get('perf') === '1'){
+if (QS.get('perf') === '1' || SIM){
   let raf = 0, cam = 0, lag = 0, lagMax = 0, tick = performance.now(), t0p = performance.now();
   (function f(){ raf++; requestAnimationFrame(f); })();
   (function vf(){ const v = $('cam'); if (v && v.requestVideoFrameCallback) v.requestVideoFrameCallback(() => { cam++; vf(); }); else setTimeout(vf, 1000); })();
