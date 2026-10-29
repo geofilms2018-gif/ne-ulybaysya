@@ -375,38 +375,70 @@ function alienEyes(g, LPx, FW){
     g.fillStyle = k; g.shadowColor = 'rgba(0,0,0,.45)'; g.shadowBlur = w * 0.08; g.beginPath(); g.ellipse(0, 0, w * 0.62, w * 0.34, 0, 0, Math.PI * 2); g.fill(); g.shadowBlur = 0;
     g.fillStyle = 'rgba(255,255,255,.75)'; g.beginPath(); g.ellipse(-w * 0.22, -w * 0.12, w * 0.1, w * 0.06, -0.3, 0, Math.PI * 2); g.fill(); g.restore(); }
 }
-// приколы «как уши» (Гео 29.10: «20 с ушами — хорошо, делать ещё такие»): деформации частей лица по точкам; рот сдвигается целиком, не искажается
+// приколы «как уши» (Гео 29.10: «20 с ушами — хорошо, делать ещё такие») — движок прототипа warp_core: сетка на весь кадр, узлы сдвигаются полем
+// (содержимое едет вперёд — без разрывов и колец); рот едет целиком; поле гаснет за овалом головы и к краям кадра; сила — в долях лица, мелкое лицо сильнее.
+const PRIK = new Set(['blin', 'horse', 'chin', 'fish']);
+const pss = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+function pgeom(lm, W, H){
+  const P = lm.map(p => ({x: p.x * W, y: p.y * H})), O = P[168], chin = P[152];
+  const L = Math.hypot(O.x - chin.x, O.y - chin.y), ax = {x: (O.x - chin.x) / L, y: (O.y - chin.y) / L}, px = {x: -ax.y, y: ax.x};   // ax — вверх по лицу
+  const loc = p => { const dx = p.x - O.x, dy = p.y - O.y; return {u: dx * px.x + dy * px.y, v: dx * ax.x + dy * ax.y}; };
+  const glob = (u, v) => ({x: O.x + px.x * u + ax.x * v, y: O.y + px.y * u + ax.y * v});
+  const wR = Math.max(L * 0.3, loc(P[454]).u), wL = Math.max(L * 0.3, -loc(P[234]).u), FW = Math.hypot(P[454].x - P[234].x, P[454].y - P[234].y);
+  const mc = {x: (P[61].x + P[291].x + P[13].x + P[14].x) / 4, y: (P[61].y + P[291].y + P[13].y + P[14].y) / 4}, rm = Math.hypot(P[291].x - P[61].x, P[291].y - P[61].y) / 2;
+  const ew = (Math.hypot(P[133].x - P[33].x, P[133].y - P[33].y) + Math.hypot(P[263].x - P[362].x, P[263].y - P[362].y)) / 2;
+  return {P, O, chin, L, ax, px, loc, glob, wR, wL, mc, rm, ew, FW, W, H, B: 1 + 0.5 * pss(0.45, 0.2, FW / W)};
+}
+const plens = (G, c, R, k, p) => { const dx = p.x - c.x, dy = p.y - c.y, d2 = (dx * dx + dy * dy) / (R * R); if (d2 >= 1) return [0, 0]; const w = (1 - d2) ** 2; return [dx * (k - 1) * w, dy * (k - 1) * w]; };
+const pshift = (c, R, m, p) => { const d2 = ((p.x - c.x) ** 2 + (p.y - c.y) ** 2) / (R * R); if (d2 >= 1) return [0, 0]; const w = (1 - d2) ** 2; return [m.x * w, m.y * w]; };
+const PF = {
+  // Блин — голову сплющило: шире и короче
+  blin: G => { const c = G.glob(0, -0.35 * G.L), ku = 1 + 0.28 * G.B, kv = 1 - 0.3 * G.B;
+    return (x, y) => { const dx = x - c.x, dy = y - c.y, w = 1 - pss(0.95 * G.L, 1.35 * G.L, Math.hypot(dx, dy)), u = dx * G.px.x + dy * G.px.y, v = dx * G.ax.x + dy * G.ax.y, vo = G.loc({x, y}).v, du = u * (ku - 1) * w, dv = v * (kv - 1) * w * (1 - pss(0.6 * G.L, 0.95 * G.L, vo));   // над макушкой фон не тянем
+      return [G.px.x * du + G.ax.x * dv, G.px.y * du + G.ax.y * dv]; }; },
+  // Лошадь — лицо вытянулось вниз, узкое
+  horse: G => (x, y) => { const {u, v} = G.loc({x, y}), t = -v / G.L, w = u > 0 ? G.wR : G.wL, r = Math.abs(u) / w, hf = 1 - pss(0.85, 1.15, r), a = 0.2;
+    let g = t <= 0 ? 0 : t < a ? t * t / (2 * a) : t - a / 2; if (t > 1) g = (1 - a / 2) * (1 - pss(1, 2.2, t));
+    const dv = -0.55 * G.B * G.L * g * hf, du = (r <= 1 ? u : Math.sign(u) * w * (1 - pss(1, 1.8, r))) * -0.14 * pss(0.1, 0.6, t) * (1 - pss(1.0, 1.6, t));
+    return [G.px.x * du + G.ax.x * dv, G.px.y * du + G.ax.y * dv]; },
+  // Щелкунчик — челюсть ×2: всё от нижней губы до подбородка вдвое длиннее и шире, ниже — плавно назад
+  chin: G => { const v0 = G.loc(G.P[17]).v - G.L * 0.03, J = v0 - G.loc(G.chin).v;
+    return (x, y) => { const {u, v} = G.loc({x, y}), t = (v0 - v) / J, w = u > 0 ? G.wR : G.wL, hf = 1 - pss(0.85, 1.15, Math.abs(u) / w), a = 0.25; if (t <= 0) return [0, 0];
+      let g = t < a ? t * t / (2 * a) : t - a / 2; if (t > 1) g = (1 - a / 2) * (1 - pss(1, 3.2, t));
+      const dv = -1.25 * G.B * J * g * hf, du = u * 0.32 * G.B * pss(0, 1, t) * (1 - pss(1, 3, t)) * (1 - pss(1.0, 1.8, Math.abs(u) / w));
+      return [G.px.x * du + G.ax.x * dv, G.px.y * du + G.ax.y * dv]; }; },
+  // Рыба — глаза разъехались к вискам и чуть крупнее
+  fish: G => { const e = [G.P[468], G.P[473]].map(c => ({c, s: Math.sign(G.loc(c).u) || 1}));
+    return (x, y) => { let dx = 0, dy = 0; for (const {c, s: sg} of e){ const a = pshift(c, 1.75 * G.ew, {x: G.px.x * sg * 0.68 * G.B * G.ew, y: G.px.y * sg * 0.68 * G.B * G.ew}, {x, y}), b = plens(G, c, 1.1 * G.ew, 1.12, {x, y}); dx += a[0] + b[0]; dy += a[1] + b[1]; } return [dx, dy]; }; },
+};
+let PM = null;
+function prikolMesh(W, H){
+  if (PM && PM.W === W && PM.H === H) return PM;
+  const GX = 120, GY = Math.max(8, Math.round(GX * H / W)), n = (GX + 1) * (GY + 1), geo = new THREE.BufferGeometry(), pos = new Float32Array(n * 3), uv = new Float32Array(n * 2), base = new Float32Array(n * 2), idx = [];
+  for (let j = 0; j <= GY; j++) for (let i = 0; i <= GX; i++){ const k = j * (GX + 1) + i; base[k * 2] = i / GX * W; base[k * 2 + 1] = j / GY * H; uv[k * 2] = i / GX; uv[k * 2 + 1] = 1 - j / GY; }
+  for (let j = 0; j < GY; j++) for (let i = 0; i < GX; i++){ const a = j * (GX + 1) + i, b = a + 1, c = a + GX + 1, d = c + 1; idx.push(a, c, b, b, c, d); }
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); geo.setIndex(idx);
+  const src = document.createElement('canvas'); src.width = W; src.height = H; const tex = new THREE.CanvasTexture(src); tex.colorSpace = THREE.SRGBColorSpace; tex.generateMipmaps = false; tex.minFilter = THREE.LinearFilter;
+  const scene = new THREE.Scene(); scene.add(new THREE.Mesh(geo, new THREE.MeshBasicMaterial({map: tex, toneMapped: false, depthTest: false})));
+  if (PM) PM.tex.dispose();
+  return PM = {W, H, geo, pos, base, src, sg: src.getContext('2d'), tex, scene, cam: new THREE.OrthographicCamera(-1, 1, 1, -1, -1, 1)};
+}
 function prikol(g, id, lm, W, H){
-  const P = i => ({x: lm[i].x * W, y: lm[i].y * H}), FW = Math.hypot(P(454).x - P(234).x, P(454).y - P(234).y);
-  const a = P(10), b = P(152), L = Math.hypot(a.x - b.x, a.y - b.y) || 1, ax = {x: (b.x - a.x) / L, y: (b.y - a.y) / L}, px = {x: -ax.y, y: ax.x};   // ax — вниз по лицу
-  const O = {x: (a.x + b.x) / 2, y: (a.y + b.y) / 2}, loc = q => ({u: (q.x - O.x) * px.x + (q.y - O.y) * px.y, v: (q.x - O.x) * ax.x + (q.y - O.y) * ax.y});
-  const V = (du, dv) => [px.x * du + ax.x * dv, px.y * du + ax.y * dv], M = P(13);
-  // рот: смещение в его области берём общим (как у центра рта) — губы едут целиком
-  const mouthLock = (fn) => { const m0 = fn(M.x, M.y), mr = Math.hypot(P(291).x - P(61).x, P(291).y - P(61).y) * 0.75;
-    return (x, y) => { const d = fn(x, y), r = Math.hypot(x - M.x, y - M.y), w = sstep(mr * 1.6, mr, r); return [d[0] + (m0[0] - d[0]) * w, d[1] + (m0[1] - d[1]) * w]; }; };
-  let fn;
-  if (id === 'blin'){   // Блин: голову сплющило — шире и короче
-    const ku = 1.26, kv = 0.74, c = {x: O.x - ax.x * L * 0.05, y: O.y - ax.y * L * 0.05};
-    fn = (x, y) => { const dx = x - c.x, dy = y - c.y, w = 1 - sstep(L * 0.6, L * 1.2, Math.hypot(dx, dy)), u = dx * px.x + dy * px.y, v = dx * ax.x + dy * ax.y; return V(u * (1 - 1 / ku) * w, v * (1 - 1 / kv) * w); };
-  }
-  if (id === 'horse'){   // Лошадь: ниже глаз лицо тянется вниз и сужается
-    const v0 = loc(P(195)).v, sd = FW * 0.5, A = 0.15;   // от середины носа вниз; разгон плавный (без двоения глаз)
-    fn = (x, y) => { const {u, v} = loc({x, y}), t = Math.max(0, (v - v0) / L), hf = Math.exp(-(u * u) / (2 * (sd * 1.3) ** 2)), g2 = (t < A ? t * t / (2 * A) : Math.min(t, 0.7) - A / 2) * (1 - sstep(0.85, 1.4, t));
-      return V(-u * 0.18 * sstep(0, 0.4, t) * (1 - sstep(0.85, 1.4, t)), L * 0.5 * g2 * hf); };
-  }
-  if (id === 'chin'){   // Щелкунчик: огромная челюсть — подбородок вниз и шире
-    const c = {x: P(152).x - ax.x * L * 0.08, y: P(152).y - ax.y * L * 0.08}, R = L * 0.75;
-    fn = (x, y) => { const dx = x - c.x, dy = y - c.y, d = Math.hypot(dx, dy); if (d >= R) return [0, 0]; const k = 0.6 * (1 - d / R) ** 1.3, D = [dx * k, dy * k], up = D[0] * -ax.x + D[1] * -ax.y;   // увеличение: тянем к центру выборку
-      return up > 0 ? [D[0] + ax.x * up, D[1] + ax.y * up] : D; };
-  }
-  if (id === 'fish'){   // Рыба: глаза разъехались к вискам и чуть крупнее
-    const eyes = [[P(468), -1], [P(473), 1]].map(([c, s0]) => ({c, s: Math.sign(loc(c).u) || s0})), ew = Math.hypot(P(133).x - P(33).x, P(133).y - P(33).y);
-    fn = (x, y) => { let dx = 0, dy = 0; for (const {c, s: sg} of eyes){ const sh = ew * 1.1, q = {x: x - px.x * sg * sh, y: y - px.y * sg * sh}, r = Math.hypot(q.x - c.x, q.y - c.y), w = Math.exp(-(r * r) / (2 * (ew * 1.0) ** 2));
-      dx += px.x * sg * sh * w + (x - c.x - px.x * sg * sh) * 0.15 * w; dy += px.y * sg * sh * w + (y - c.y - px.y * sg * sh) * 0.15 * w; } return [dx, dy]; };
-  }
-  if (!fn) return;
-  const f2 = id === 'chin' ? fn : mouthLock(fn);
-  field(g, O.x - L * 1.4, O.y - L * 1.3, O.x + L * 1.4, O.y + L * 1.5, f2);
+  if (!R) return;
+  const G = pgeom(lm, W, H), f = PF[id](G), dm = f(G.mc.x, G.mc.y), rx = G.rm * 1.2, ry = G.rm * (id === 'chin' ? 0.45 : 0.9), m = prikolMesh(W, H);
+  const oc = G.glob(0, -0.3 * G.L), RU = Math.max(G.wR, G.wL) * 1.1, RV = G.L * (id === 'chin' || id === 'horse' ? 1.5 : 1.3);   // овал головы: дальше поле гаснет — фон и одежда на месте
+  const field = (x, y) => { const d = f(x, y), du = (x - G.mc.x) * G.px.x + (y - G.mc.y) * G.px.y, dv = (x - G.mc.x) * G.ax.x + (y - G.mc.y) * G.ax.y;
+    const e = Math.sqrt((du / rx) ** 2 + (dv / ry) ** 2), w = 1 - pss(1.0, 1.9, e), q = {x: d[0] + (dm[0] - d[0]) * w, y: d[1] + (dm[1] - d[1]) * w};   // рот едет целиком
+    const ou = (x - oc.x) * G.px.x + (y - oc.y) * G.px.y, ov = (x - oc.x) * G.ax.x + (y - oc.y) * G.ax.y, h = 1 - pss(1.0, 1.35, Math.hypot(ou / RU, ov / RV));
+    return [q.x * h, q.y * h]; };
+  const {pos, base} = m;
+  for (let k = 0; k < base.length / 2; k++){ const x = base[k * 2], y = base[k * 2 + 1]; let [dx, dy] = field(x, y);
+    const e = Math.min(pss(0, 0.06 * W, x), pss(W, 0.94 * W, x), pss(0, 0.06 * H, y), pss(H, 0.94 * H, y)); dx *= e; dy *= e;   // к краю кадра поле гаснет
+    pos[k * 3] = (x + dx) / W * 2 - 1; pos[k * 3 + 1] = 1 - (y + dy) / H * 2; pos[k * 3 + 2] = 0; }
+  m.geo.attributes.position.needsUpdate = true;
+  m.sg.drawImage(g.canvas, 0, 0); m.tex.needsUpdate = true;
+  const r = R.renderer; if (R.w !== W || R.h !== H){ r.setSize(W, H, false); R.camera.aspect = W / H; R.camera.updateProjectionMatrix(); R.w = W; R.h = H; }
+  r.render(m.scene, m.cam); g.drawImage(r.domElement, 0, 0);
 }
 
 function warps2d(g, id, lm, W, H){
