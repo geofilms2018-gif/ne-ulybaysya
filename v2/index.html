@@ -115,6 +115,12 @@
   .mkbtn{width:36px;height:36px;padding:0;border-radius:50%;background:#0008;border:1px solid #fff3;font-size:18px;color:#fff;pointer-events:auto}
   #mkSheet{position:absolute;left:0;right:0;bottom:0;z-index:7;background:#000e;visibility:hidden;padding:6px 0 calc(8px + env(safe-area-inset-bottom));transform:translateY(110%);transition:transform .2s;border-radius:16px 16px 0 0}
   #mkSheet.on{transform:none;visibility:visible}
+  /* Гео 29.10: выбор масок всегда виден — карусель внизу экрана игры, листается пальцем; кнопка 🎭 не нужна */
+  #game #mkSheet{transform:none;visibility:visible;background:linear-gradient(#0000,#000c 35%);padding:14px 0 calc(6px + env(safe-area-inset-bottom));border-radius:0}
+  #game #mkSheet .mkh{display:none} #btnMk{display:none}
+  #mkRow{scroll-snap-type:x mandatory;scroll-padding:0 40%} #mkRow .mk{scroll-snap-align:center;width:58px} #mkRow .mk canvas{width:46px;height:46px}
+  #game #grid{bottom:calc(92px + env(safe-area-inset-bottom))}
+  #game #feed{bottom:calc(104px + env(safe-area-inset-bottom))}
   #invBox{width:100%;max-width:360px;margin:4px auto 0;background:#151515;border-radius:14px;padding:8px 10px}
   #invBox .invt{font-size:12px;opacity:.7;margin:4px 0}
   #frList .fr{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #262626}
@@ -130,7 +136,9 @@
   .mstyles button{flex:none;width:auto;font-size:12px;padding:5px 10px;border-radius:14px;background:#1f1f1f;color:#cfcfcf}
   .mstyles button.on{background:var(--ig);color:#fff}
   #maskPaid{font-size:12px;color:#e8b923}
-  #btnMic{display:none;max-width:220px} body.voice #btnMic{display:block}
+  #btnMic{display:none;max-width:240px;align-items:center;justify-content:center;gap:8px} body.voice #btnMic{display:flex}
+  #btnMic.off{background:#e5383b;color:#fff}
+  #meMic{display:none;align-items:center;justify-content:center} body.voice #meMic{display:flex} #meMic.off{background:#e5383bdd}
   .tname{position:absolute;left:10px;bottom:8px;z-index:1;font-weight:700;font-size:13px;background:#0007;padding:3px 8px;border-radius:10px}
   #prepAv{position:absolute;top:22%;left:0;right:0;display:flex;flex-wrap:wrap;justify-content:center;gap:10px 14px;padding:0 8px;z-index:4;pointer-events:none}
   #prepAv .pa{display:flex;flex-direction:column;align-items:center;gap:6px;opacity:0}
@@ -222,7 +230,7 @@
   <div class="modes" id="modes" style="display:none"><button class="sec on" id="mNear">🤝 Рядом</button><button class="sec" id="mFar">🌍 Дистанционно</button></div>
   <p id="modeHint">Режим: 🤝 рядом — без голоса</p>
   <div class="pvwrap"><video id="pv" playsinline muted autoplay></video><video id="pvMask" playsinline muted autoplay style="display:none"></video></div>
-  <button class="sec" id="btnMic">🎤 Микрофон включён</button>
+  <button class="sec" id="btnMic"></button>
   <div class="mstyles" id="maskStyles"></div>
   <div class="masks" id="maskBar"></div>
   <p id="maskHint">Маска — видна всем на твоём видео</p>
@@ -235,7 +243,7 @@
 </section>
 
 <section class="scr" id="game">
-  <div id="grid"><div class="tile" data-id="me"><video id="cam" playsinline muted autoplay></video><video id="meMask" playsinline muted autoplay style="display:none"></video><span class="tname" id="meTile">я</span><button class="mic" id="meMic">🎤</button></div></div>
+  <div id="grid"><div class="tile" data-id="me"><video id="cam" playsinline muted autoplay></video><video id="meMask" playsinline muted autoplay style="display:none"></video><span class="tname" id="meTile">я</span><button class="mic" id="meMic" aria-label="Микрофон"></button></div></div>
   <div class="shade"></div>
   <div class="top">
     <div class="me"><div class="ring"><b id="meAv">?</b></div><span id="meName"></span></div>
@@ -259,7 +267,7 @@
 
 <section class="scr" id="res">
   <div id="intr"><div id="intrTitle"></div><div id="intrRow"></div><div id="intrNum"></div></div>
-  <div id="cd">5</div>
+  <div id="cd">3</div>
   <div id="reveal">
     <div class="tag" id="loserWhy"></div>
     <div id="loserName"></div>
@@ -894,9 +902,15 @@ function applyAudio(t){
   if (!v.muted) v.play().catch(() => {});
   b.textContent = t.dataset.mute ? '🔇' : '🔊';
 }
+// микрофон: значок микрофона; выключен — перечёркнут и красный (Гео 29.10: «сделать очевиднее»)
+const MIC_SVG = off => '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+  + '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6"/>' + (off ? '<path d="M3 3l18 18" stroke-width="2.6"/>' : '') + '</svg>';
 function showMic(){
-  const txt = !mic ? '🚫 Нет доступа к микрофону' : micOn ? '🎤 Микрофон включён' : '🔇 Микрофон выключен';
-  $('btnMic').textContent = txt; $('meMic').textContent = !mic ? '🚫' : micOn ? '🎤' : '🔇';
+  const off = !mic || !micOn;
+  $('btnMic').innerHTML = MIC_SVG(off) + '<span>' + (!mic ? 'Нет доступа к микрофону' : micOn ? 'Микрофон включён' : 'Микрофон выключен') + '</span>';
+  $('meMic').innerHTML = MIC_SVG(off);
+  $('btnMic').classList.toggle('off', off); $('meMic').classList.toggle('off', off);
+  $('btnMic').setAttribute('aria-pressed', String(!off)); $('meMic').setAttribute('aria-label', off ? 'Включить микрофон' : 'Выключить микрофон');
 }
 function toggleMic(ev){
   if (ev) ev.stopPropagation();
@@ -1375,13 +1389,13 @@ function showIntrigue(m){
   })();
 }
 function showLoser(m){
-  phase = 'done'; if (rec) setTimeout(recStop, 12000);   // запись захватывает отсчёт и показ проигравшего, потом сама останавливается
+  phase = 'done'; if (rec) setTimeout(recStop, 10000);   // запись захватывает отсчёт и показ проигравшего, потом сама останавливается
   show('res');
   $('reveal').style.display = 'none'; $('intr').style.display = 'none';
   if (m.intrigue && m.intrigue.length > 1){ $('cd').style.display = 'none'; showIntrigue(m); return; }
   $('cd').style.display = 'block'; $('cd').classList.add('shake');
   play('dun');
-  let n = 5; $('cd').textContent = n;
+  let n = 3; $('cd').textContent = n;   // Гео 29.10: 3-2-1 (в записи тоже — recFrame рисует #cd)
   const iv = setInterval(() => {
     n--;
     if (n > 0){ $('cd').textContent = n; return; }
