@@ -339,7 +339,7 @@ function kaki(g, lm, W, H){   // брови-какашки: коричневая
 
 // ---------- верх головы игрока по силуэту (сегментация MediaPipe): ободки и шапки садятся на свою голову, а не на «среднюю» ----------
 // Верх силуэта (с волосами) над точкой 10 в долях высоты лица (10→152) → сдвиг в см от головы-эталона; раз в FIT_EVERY кадров, сглаживание.
-const FIT_EVERY = 6, INSET = 0.17, FIT_LO = -5, FIT_HI = 3;
+const HAT_Z = 1.4, FIT_EVERY = 6, INSET = 0.17, FIT_LO = -5, FIT_HI = 3;
 let SEG = null, segP = null, fitN = 0; const FIT = {dy: 0, sx: 1, n: 0, r: 0, w: 0, T: null, fh: 0, gap: 0}, W0 = 1.12;
 function segInit(){
   return segP || (segP = (async () => {
@@ -388,7 +388,7 @@ export function prepare(id){
   return loading = (async () => {
     await loadObj(); initR();
     const G = new THREE.Group();
-    const onTop = id === 'crown' || id === 'angel' || BAND[id];   // шапки-ассеты (дуршлаг, кепка, лавр) облегают голову сами — их не двигаем
+    const hat = [].concat(ASSET[id] || []).some(a => a.kind === 'hat'), onTop = id === 'crown' || id === 'angel' || BAND[id] || hat;
     if (onTop) await segInit();
     if (id === 'crown') buildCrown(G);
     else if (id === 'angel') await buildHalo(G);
@@ -396,7 +396,7 @@ export function prepare(id){
     else if (id === 'clown') await buildPenni();
     else if (ASSET[id]) for (const a of [].concat(ASSET[id])){ if (a.kind === 'hat') await buildHat(a, G); else if (a.kind === 'face') await buildFace(a, G); else await buildPic(a, G); }
     if (cur !== id) return;
-    G.userData.onTop = !!onTop; R.parts.clear(); R.parts.add(G); R.parts.userData = G.userData; ready = id;
+    G.userData.onTop = !!onTop; G.userData.hat = hat; R.parts.clear(); R.parts.add(G); R.parts.userData = G.userData; ready = id;
   })().catch(e => { console.warn('maski3d', id, e); if (cur === id) cur = ''; }).finally(() => { loading = null; });
 }
 // кадр: g — холст с кадром камеры; lm — точки лица; M — матрица лица (16 чисел) или null
@@ -412,7 +412,8 @@ export function draw(g, id, lm, M){
   if (!has3d(id) || !M) return;
   R.head.matrix.fromArray(M); R.head.matrixWorldNeedsUpdate = true;
   { const top = R.parts.userData.onTop; if (top){ headFit(g, lm, W, H); R.parts.position.y = 0; fitDy(W, H); } const dy = top ? FIT.dy : 0, sx = top ? FIT.sx : 1;   // шапка и череп-окклюдер — на высоту своей головы
-    R.parts.position.y = dy; R.parts.scale.x = sx; R.skull.scale.x = 7.7 * sx; R.skull.scale.y = 10.6 + dy / 2; R.skull.position.y = 1.2 + dy / 2; }
+    const hz = R.parts.userData.hat ? HAT_Z * Math.max(0, -dy) : 0;   // шапка, опускаясь по лбу, выходит вперёд — поля не уходят под лоб
+    R.parts.position.y = dy; R.parts.position.z = hz; R.parts.scale.x = sx; R.skull.scale.x = 7.7 * sx; R.skull.scale.y = 10.6 + dy / 2; R.skull.position.y = 1.2 + dy / 2; }
   const gg = R.parts.userData.googly;
   if (gg){ const dn = new THREE.Vector3(0, -1, 0).transformDirection(new THREE.Matrix4().copy(R.head.matrix).invert());   // «вниз» в системе головы
     gg.forEach((e, j) => { const a = Math.atan2(dn.y, dn.x) + (j ? 0.55 : -0.35), r = e.max * 0.95; e.pm.position.x = e.x0 + Math.cos(a) * r; e.pm.position.y = e.y0 + Math.sin(a) * r; }); }
