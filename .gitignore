@@ -1,6 +1,4 @@
 idei/
 perf/
-maski/prev/*
-!maski/prev/.keep
 **/fr/
 *.mp4
