@@ -763,14 +763,14 @@ function setMask(id){
 // ---------- карточки масок: стили, замки, покупка за ⭐, VIP ----------
 // Доступ решает сервер (/owned по подписи initData): бесплатные ∪ купленные ∪ всё для VIP. Вне Телеграма — только бесплатные.
 let maskStyle = '';
-const shop = {vip: false, owned: new Set(), prices: {}, free: new Set(['crown', 'bunny', 'hearts', 'deer']), vipOnly: new Set(), vipExc: new Set()};
+const shop = {vip: false, owned: new Set(), prices: {}, free: new Set(['crown', 'bunny', 'hearts', 'deer']), vipOnly: new Set(), vipExcept: new Set()};   // vipExcept — маски, которые VIP не открывает (тест покупки за ⭐)
 const isVip = () => shop.vip;
-const maskOpen = m => !m.id || ALLMASKS || (shop.vip && !shop.vipExc.has(m.id)) || shop.free.has(m.id) || shop.owned.has(m.id);
+const maskOpen = m => !m.id || ALLMASKS || (shop.vip && !shop.vipExcept.has(m.id)) || shop.free.has(m.id) || shop.owned.has(m.id);
 async function loadShop(){
   if (!INIT_DATA()) return;
   try {
     const j = await (await fetch(API + '/owned?initData=' + encodeURIComponent(INIT_DATA()))).json();
-    if (j && j.prices){ shop.vip = !!j.vip; shop.owned = new Set(j.owned || []); shop.prices = j.prices; shop.free = new Set(j.free || []); shop.vipOnly = new Set(j.vip_only || []); shop.vipExc = new Set(j.vip_except || []); }
+    if (j && j.prices){ shop.vip = !!j.vip; shop.owned = new Set(j.owned || []); shop.prices = j.prices; shop.free = new Set(j.free || []); shop.vipOnly = new Set(j.vip_only || []); shop.vipExcept = new Set(j.vip_except || []); }
   } catch(e){}
   buildMaskBar(); $('btnRec').style.display = shop.vip ? '' : 'none';
 }
@@ -784,8 +784,9 @@ async function buyMask(m){
     const st = await new Promise(res => { try { TG.openInvoice(j.link, res); } catch(e){ res('failed'); } });
     if (st === 'paid'){
       toast('Оплачено, открываю маску…');
-      for (let i = 0; i < 12 && !shop.owned.has(m.id); i++){ await loadShop(); if (!shop.owned.has(m.id)) await new Promise(r => setTimeout(r, 1000)); }   // платёж доходит до сервера чуть позже ответа Телеграма
-      if (shop.owned.has(m.id)){ toast('«' + m.name + '» куплена ✨'); setMask(m.id); closeSheet(); }
+      const got = () => shop.owned.has(m.id) || (shop.vip && !shop.vipExcept.has(m.id));
+      for (let i = 0; i < 12 && !got(); i++){ await loadShop(); if (!shop.owned.has(m.id)) await new Promise(r => setTimeout(r, 1000)); }   // платёж доходит до сервера чуть позже ответа Телеграма
+      if (got()){ toast('«' + m.name + '» куплена ✨'); setMask(m.id); closeSheet(); }
       else toast('Платёж обрабатывается — маска откроется через минуту');
     }
     else if (st === 'failed') toast('Оплата не прошла');
