@@ -27,7 +27,7 @@ const BAND = {
   fembo:   {file: 'fembo',   cx: 165, yt: 189, yw: 290, a: 98.5, ok: 0.45, text: {lines: ['ФЕМБОЙ'], cx: 159.5, cy: 97, bw: 255, bh: 110, ang: -0.129}},
 };
 // маски этого модуля (остальные — 2D в maski.js)
-export const IDS = new Set(['crown', 'wreath', 'angel', ...Object.keys(BAND), 'clown', 'latex', 'mult', 'cyclop', 'kaki', 'ushi', 'puchi', 'durshlag', 'vertolet', 'shnobel', 'alien', 'mozg']);
+export const IDS = new Set(['crown', 'wreath', 'angel', ...Object.keys(BAND), 'clown', 'latex', 'mult', 'cyclop', 'kaki', 'ushi', 'puchi', 'durshlag', 'vertolet', 'alien', 'mozg']);
 
 // ---------- каноническое лицо: вершины, треугольники, UV ----------
 let CV, CF, UV;
@@ -293,7 +293,6 @@ function warps2d(g, id, lm, W, H){
     for (const i of [468, 473]){ const e = LPx(i); eraseEye(g, e, {x: e.x, y: e.y - FW * 0.2}, FW * 0.16, FW * 0.09); }
     own(up);
   }
-  if (id === 'shnobel'){ const a4 = LPx(4), a6 = LPx(6), c = {x: a4.x * 0.7 + a6.x * 0.3, y: a4.y * 0.7 + a6.y * 0.3}; warp(g, c, safeR(c, FW * 0.34), 1.7, 1.03); }
   if (id === 'mozg'){   // лоб от бровей до линии волос растягивается вверх ×1,8 — только по высоте; над лбом всё сдвигается целиком; к вискам и выше головы гаснет
     const up = {x: (LPx(10).x - LPx(152).x), y: (LPx(10).y - LPx(152).y)}, ul = Math.hypot(up.x, up.y) || 1; up.x /= ul; up.y /= ul;
     const side = {x: -up.y, y: up.x}, ctr = LPx(9), along = p => (p.x - ctr.x) * up.x + (p.y - ctr.y) * up.y, across = p => (p.x - ctr.x) * side.x + (p.y - ctr.y) * side.y;
@@ -304,7 +303,8 @@ function warps2d(g, id, lm, W, H){
       const w = Math.exp(-(across(p) ** 2) / (2 * sgx * sgx)) * fade, D = (a - src) * w; return [up.x * D, up.y * D]; });
   }
   if (id === 'alien'){ for (const i of [468, 473]){ const c = LPx(i); warp(g, c, FW * 0.17, 1.15, 1); } const n = LPx(4); warp(g, n, safeR(n, FW * 0.14), -0.55, 1); const c = LPx(151); warp(g, {x: c.x, y: c.y - FW * 0.05}, FW * 0.4, 0.8, 1.03); }
-  if (id === 'ushi'){ const c5 = LPx(5); warp(g, c5, Math.min(FW * 0.2, LPx(0).y - c5.y - FW * 0.025), 0.95, 1); warp(g, LPx(151), FW * 0.26, -0.3, 1); }
+  // Уши-локаторы = уши + шнобель (Гео 29.10: «маски, шнобели, уши — одна маска»): нос как у Шнобеля, лоб чуть меньше
+  if (id === 'ushi'){ const a4 = LPx(4), a6 = LPx(6), c = {x: a4.x * 0.7 + a6.x * 0.3, y: a4.y * 0.7 + a6.y * 0.3}; warp(g, c, safeR(c, FW * 0.34), 1.7, 1.03); warp(g, LPx(151), FW * 0.26, -0.3, 1); }
 }
 function kaki(g, lm, W, H){   // брови-какашки: коричневая спираль по линии брови
   const LPx = i => ({x: lm[i].x * W, y: lm[i].y * H});
