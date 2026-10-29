@@ -279,12 +279,18 @@
 <audio id="sDun" src="zvuki/dundun.mp3" preload="auto"></audio>
 <audio id="sRev" src="zvuki/reveal.mp3" preload="auto"></audio>
 
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script src="https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js"></script>
 <script type="module">
 import {FaceLandmarker, FilesetResolver} from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
-import {MASKS, STYLES, faceFrame, previewFrame, drawMask, preloadMasks} from "./maski.js";
+import {MASKS, MASKS3D, STYLES, faceFrame, previewFrame, drawMask, preloadMasks} from "./maski.js";
+// маски на голове (three.js) — модуль грузится при первом выборе такой маски
+let m3 = null, m3p = null;
+const loadM3 = () => m3p || (m3p = import("./maski3d.js").then(m => m3 = m).catch(e => { m3p = null; throw e; }));
+const PREV = {};   // превью карточек масок на голове: maski/prev/<id>.webp
+const prevImg = id => { if (!PREV[id]){ const im = new Image(); im.src = "./maski/prev/" + id + ".webp"; im.onload = () => { try { buildMaskBar(); } catch(e){} }; PREV[id] = im; } return PREV[id]; };
 preloadMasks().then(() => { try { buildMaskBar(); } catch(e){} });
 
 const $ = id => document.getElementById(id);
@@ -448,7 +454,7 @@ function initModel(){ return modelReady || (modelReady = loadModel().catch(e => 
 async function loadModel(){
   const fs = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
   const opts = d => ({baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task", delegate:d},
-                      runningMode:'VIDEO', numFaces:1, outputFaceBlendshapes:true});
+                      runningMode:'VIDEO', numFaces:1, outputFaceBlendshapes:true, outputFacialTransformationMatrixes:true});
   if (IOS){ landmarker = await FaceLandmarker.createFromOptions(fs, opts('CPU')); return; }
   try { landmarker = await FaceLandmarker.createFromOptions(fs, opts('GPU')); }
   catch(e){ landmarker = await FaceLandmarker.createFromOptions(fs, opts('CPU')); }
@@ -485,6 +491,7 @@ function detectRaw(v){
   const td = performance.now(), r = landmarker.detectForVideo(detCv, td), bs = r.faceBlendshapes && r.faceBlendshapes[0];
   detStat.n++; detStat.ms += performance.now() - td;
   faceLm = r.faceLandmarks && r.faceLandmarks[0] || null;
+  faceMat = faceLm && r.facialTransformationMatrixes && r.facialTransformationMatrixes[0] ? r.facialTransformationMatrixes[0].data : null;   // поза головы — для масок на голове
   if (!bs) return null;
   const b = {};
   for (const c of bs.categories) b[c.categoryName] = c.score;
@@ -738,17 +745,20 @@ function okAvatar(a){ return typeof a === 'string' && a.startsWith('data:image/j
 
 // ---------- маски: детектор смотрит на чистую камеру, а в звонки уходит кадр с маской ----------
 const ALLMASKS = new URLSearchParams(location.search).has('allmasks');   // для скринов всех масок
-let maskId = '', maskStart = 0, faceLm = null, outCv = null, outG = null, maskTrack = null, maskStream = null;
+let maskId = '', maskStart = 0, faceLm = null, faceMat = null, outCv = null, outG = null, maskTrack = null, maskStream = null;
 function drawOut(v, now){
   const w = v.videoWidth, h = v.videoHeight;
   if (outCv.width !== w || outCv.height !== h){ outCv.width = w; outCv.height = h; }
   outG.drawImage(v, 0, 0, w, h);
-  if (faceLm) drawMask(outG, maskId, faceFrame(faceLm, w, h), now / 1000, maskStart / 1000);
+  if (!faceLm) return;
+  if (MASKS3D.has(maskId)){ if (m3) m3.draw(outG, maskId, faceLm, faceMat); else loadM3().catch(() => {}); }
+  else drawMask(outG, maskId, faceFrame(faceLm, w, h), now / 1000, maskStart / 1000);
 }
 function camTrack(){ return stream ? stream.getVideoTracks()[0] : null; }
 function vidTrack(){ return maskId && maskTrack ? maskTrack : camTrack(); }
 function setMask(id){
   maskId = id || ''; maskStart = performance.now();
+  if (MASKS3D.has(maskId)) loadM3().then(m => m.prepare(maskId)).catch(() => {});
   if (maskId && !outCv){
     outCv = document.createElement('canvas'); outCv.width = 480; outCv.height = 360; outG = outCv.getContext('2d');
     maskStream = outCv.captureStream(15); maskTrack = maskStream.getVideoTracks()[0];
@@ -763,7 +773,7 @@ function setMask(id){
 // ---------- карточки масок: стили, замки, покупка за ⭐, VIP ----------
 // Доступ решает сервер (/owned по подписи initData): бесплатные ∪ купленные ∪ всё для VIP. Вне Телеграма — только бесплатные.
 let maskStyle = '';
-const shop = {vip: false, owned: new Set(), prices: {}, free: new Set(['crown', 'bunny', 'hearts', 'deer']), vipOnly: new Set(), vipExcept: new Set()};   // vipExcept — маски, которые VIP не открывает (тест покупки за ⭐)
+const shop = {vip: false, owned: new Set(), prices: {}, free: new Set(MASKS.map(m => m.id)), vipOnly: new Set(), vipExcept: new Set()};   // vipExcept — маски, которые VIP не открывает (тест покупки за ⭐)
 const isVip = () => shop.vip;
 const maskOpen = m => !m.id || ALLMASKS || (shop.vip && !shop.vipExcept.has(m.id)) || shop.free.has(m.id) || shop.owned.has(m.id);
 async function loadShop(){
@@ -809,7 +819,8 @@ function maskCard(m, hint, size){
   g.translate(108, 0); g.scale(-1, 1);   // превью зеркально, как видео, — текст читается
   g.translate(15, 24); g.scale(.72, .72);   // уменьшаем: высокие маски (уши, рога) целиком помещаются в карточку
   g.fillStyle = '#3a3a3a'; g.beginPath(); g.ellipse(f.x, f.y + f.W * 0.55, f.W * 0.5, f.W * 0.62, 0, 0, Math.PI * 2); g.fill();
-  if (m.id) drawMask(g, m.id, f, 0.6, -5);
+  if (MASKS3D.has(m.id)){ const im = prevImg(m.id); g.setTransform(-1, 0, 0, 1, 108, 0); if (im.complete && im.naturalWidth) g.drawImage(im, 0, 0, 108, 108); }
+  else if (m.id) drawMask(g, m.id, f, 0.6, -5);
   el.append(cv);
   el.insertAdjacentHTML('beforeend', '<span>' + esc(m.name) + '</span>' + (shop.vipOnly.has(m.id) && !open ? '<b class="vp">VIP</b>' : '') + (open ? '' : '<i>' + (price ? price + '⭐' : '🔒') + '</i>'));
   el.onclick = () => pickMask(m, hint);
