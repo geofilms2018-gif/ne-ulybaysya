@@ -843,7 +843,7 @@ function buildMaskBar(){
     b.onclick = () => { maskStyle = k; buildMaskBar(); }; st.append(b);
   }
   st.style.display = used.size > 1 ? '' : 'none';
-  $('maskPaid').textContent = shop.vip ? '👑 VIP: все маски открыты' : 'Платные маски — за звёзды ⭐ в Телеграме';
+  $('maskPaid').textContent = MASKS.every(maskOpen) ? 'Все маски открыты ✨' : shop.vip ? '👑 VIP: все маски открыты' : 'Платные маски — за звёзды ⭐ в Телеграме';
   for (const m of items) bar.append(maskCard(m, $('maskHint')));
   // панель в игре — те же карточки, без вкладок
   const sh = $('mkRow'); if (sh){ sh.innerHTML = ''; for (const m of [{id: '', name: 'Без маски'}, ...MASKS]) sh.append(maskCard(m, null)); }
