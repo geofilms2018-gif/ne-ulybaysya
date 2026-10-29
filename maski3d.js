@@ -27,7 +27,7 @@ const BAND = {
   fembo:   {file: 'fembo',   cx: 165, yt: 189, yw: 290, a: 98.5, ok: 0.45, lift: 0.8, text: {lines: ['ФЕМБОЙ'], cx: 159.5, cy: 97, bw: 255, bh: 110, ang: -0.129}},
 };
 // маски этого модуля (остальные — 2D в maski.js)
-export const IDS = new Set(['crown', 'wreath', 'angel', ...Object.keys(BAND), 'clown', 'latex', 'mult', 'cyclop', 'kaki', 'ushi', 'puchi', 'durshlag', 'vertolet', 'alien', 'mozg', 'spa']);
+export const IDS = new Set(['crown', 'wreath', 'angel', ...Object.keys(BAND), 'clown', 'latex', 'mult', 'cyclop', 'kaki', 'ushi', 'puchi', 'durshlag', 'vertolet', 'alien', 'mozg', 'spa', 'blin', 'horse', 'chin', 'fish']);
 
 // ---------- каноническое лицо: вершины, треугольники, UV ----------
 let CV, CF, UV;
@@ -375,6 +375,40 @@ function alienEyes(g, LPx, FW){
     g.fillStyle = k; g.shadowColor = 'rgba(0,0,0,.45)'; g.shadowBlur = w * 0.08; g.beginPath(); g.ellipse(0, 0, w * 0.62, w * 0.34, 0, 0, Math.PI * 2); g.fill(); g.shadowBlur = 0;
     g.fillStyle = 'rgba(255,255,255,.75)'; g.beginPath(); g.ellipse(-w * 0.22, -w * 0.12, w * 0.1, w * 0.06, -0.3, 0, Math.PI * 2); g.fill(); g.restore(); }
 }
+// приколы «как уши» (Гео 29.10: «20 с ушами — хорошо, делать ещё такие»): деформации частей лица по точкам; рот сдвигается целиком, не искажается
+function prikol(g, id, lm, W, H){
+  const P = i => ({x: lm[i].x * W, y: lm[i].y * H}), FW = Math.hypot(P(454).x - P(234).x, P(454).y - P(234).y);
+  const a = P(10), b = P(152), L = Math.hypot(a.x - b.x, a.y - b.y) || 1, ax = {x: (b.x - a.x) / L, y: (b.y - a.y) / L}, px = {x: -ax.y, y: ax.x};   // ax — вниз по лицу
+  const O = {x: (a.x + b.x) / 2, y: (a.y + b.y) / 2}, loc = q => ({u: (q.x - O.x) * px.x + (q.y - O.y) * px.y, v: (q.x - O.x) * ax.x + (q.y - O.y) * ax.y});
+  const V = (du, dv) => [px.x * du + ax.x * dv, px.y * du + ax.y * dv], M = P(13);
+  // рот: смещение в его области берём общим (как у центра рта) — губы едут целиком
+  const mouthLock = (fn) => { const m0 = fn(M.x, M.y), mr = Math.hypot(P(291).x - P(61).x, P(291).y - P(61).y) * 0.75;
+    return (x, y) => { const d = fn(x, y), r = Math.hypot(x - M.x, y - M.y), w = sstep(mr * 1.6, mr, r); return [d[0] + (m0[0] - d[0]) * w, d[1] + (m0[1] - d[1]) * w]; }; };
+  let fn;
+  if (id === 'blin'){   // Блин: голову сплющило — шире и короче
+    const ku = 1.26, kv = 0.74, c = {x: O.x - ax.x * L * 0.05, y: O.y - ax.y * L * 0.05};
+    fn = (x, y) => { const dx = x - c.x, dy = y - c.y, w = 1 - sstep(L * 0.6, L * 1.2, Math.hypot(dx, dy)), u = dx * px.x + dy * px.y, v = dx * ax.x + dy * ax.y; return V(u * (1 - 1 / ku) * w, v * (1 - 1 / kv) * w); };
+  }
+  if (id === 'horse'){   // Лошадь: ниже глаз лицо тянется вниз и сужается
+    const v0 = loc(P(195)).v, sd = FW * 0.5, A = 0.15;   // от середины носа вниз; разгон плавный (без двоения глаз)
+    fn = (x, y) => { const {u, v} = loc({x, y}), t = Math.max(0, (v - v0) / L), hf = Math.exp(-(u * u) / (2 * (sd * 1.3) ** 2)), g2 = (t < A ? t * t / (2 * A) : Math.min(t, 0.7) - A / 2) * (1 - sstep(0.85, 1.4, t));
+      return V(-u * 0.18 * sstep(0, 0.4, t) * (1 - sstep(0.85, 1.4, t)), L * 0.5 * g2 * hf); };
+  }
+  if (id === 'chin'){   // Щелкунчик: огромная челюсть — подбородок вниз и шире
+    const c = {x: P(152).x - ax.x * L * 0.08, y: P(152).y - ax.y * L * 0.08}, R = L * 0.75;
+    fn = (x, y) => { const dx = x - c.x, dy = y - c.y, d = Math.hypot(dx, dy); if (d >= R) return [0, 0]; const k = 0.6 * (1 - d / R) ** 1.3, D = [dx * k, dy * k], up = D[0] * -ax.x + D[1] * -ax.y;   // увеличение: тянем к центру выборку
+      return up > 0 ? [D[0] + ax.x * up, D[1] + ax.y * up] : D; };
+  }
+  if (id === 'fish'){   // Рыба: глаза разъехались к вискам и чуть крупнее
+    const eyes = [[P(468), -1], [P(473), 1]].map(([c, s0]) => ({c, s: Math.sign(loc(c).u) || s0})), ew = Math.hypot(P(133).x - P(33).x, P(133).y - P(33).y);
+    fn = (x, y) => { let dx = 0, dy = 0; for (const {c, s: sg} of eyes){ const sh = ew * 1.1, q = {x: x - px.x * sg * sh, y: y - px.y * sg * sh}, r = Math.hypot(q.x - c.x, q.y - c.y), w = Math.exp(-(r * r) / (2 * (ew * 1.0) ** 2));
+      dx += px.x * sg * sh * w + (x - c.x - px.x * sg * sh) * 0.15 * w; dy += px.y * sg * sh * w + (y - c.y - px.y * sg * sh) * 0.15 * w; } return [dx, dy]; };
+  }
+  if (!fn) return;
+  const f2 = id === 'chin' ? fn : mouthLock(fn);
+  field(g, O.x - L * 1.4, O.y - L * 1.3, O.x + L * 1.4, O.y + L * 1.5, f2);
+}
+
 function warps2d(g, id, lm, W, H){
   const LPx = i => ({x: lm[i].x * W, y: lm[i].y * H}), FW = Math.hypot((lm[454].x - lm[234].x) * W, (lm[454].y - lm[234].y) * H);
   const safeR = (c, Rr) => Math.min(Rr, Math.min(...LIPP.map(i => Math.hypot(LPx(i).x - c.x, LPx(i).y - c.y))) - FW * 0.03);
@@ -390,6 +424,7 @@ function warps2d(g, id, lm, W, H){
     for (const i of [468, 473]){ const e = LPx(i); eraseEye(g, e, {x: e.x, y: e.y - FW * 0.2}, FW * 0.16, FW * 0.09); }
     own(up);
   }
+  if (id === 'blin' || id === 'horse' || id === 'chin' || id === 'fish'){ prikol(g, id, lm, W, H); return; }
   if (id === 'mozg') dome(g, LPx, FW, 2.6, 0.45);   // лоб от бровей вверх ×2,6 и шире к макушке
   if (id === 'alien'){   // пришелец: высокий купол черепа, кожа серо-зелёная, огромные чёрные глаза, нос-точка; рот живой
     dome(g, LPx, FW, 1.9, 0.3); tint(g, lm, W, H, [150, 180, 155]);
@@ -487,7 +522,7 @@ export function draw(g, id, lm, M){
   if (cur !== id) prepare(id);
   const W = g.canvas.width, H = g.canvas.height;
   if (id === 'alien' || id === 'mozg' || id === 'spa') headFit(g, lm, W, H);   // силуэт головы: купол не тянет фон, шапочка Спа — по своей голове
-  try { warps2d(g, id, lm, W, H); } catch(e){}
+  try { warps2d(g, id, lm, W, H); } catch(e){ console.warn('maski3d warp', id, e); }
   if (ready !== id) return;
   if (R.w !== W || R.h !== H){ R.renderer.setSize(W, H, false); R.camera.aspect = W / H; R.camera.updateProjectionMatrix(); R.w = W; R.h = H; }
   if (id === 'clown'){ drawPenni(g, lm, W, H); return; }
@@ -497,7 +532,8 @@ export function draw(g, id, lm, M){
   R.head.matrix.fromArray(M); R.head.matrixWorldNeedsUpdate = true;
   { const top = R.parts.userData.onTop; if (top){ headFit(g, lm, W, H); R.parts.position.y = 0; fitDy(W, H); } const dy = top ? FIT.dy : 0, sx = top && BAND[id] ? FIT.sx : 1;   // ширина по силуэту — только ободкам; шапки и корона — по черепу (лицу)   // шапка и череп-окклюдер — на высоту своей головы
     const hz = R.parts.userData.hat ? HAT_Z * Math.max(0, -dy) : 0;   // шапка, опускаясь по лбу, выходит вперёд — поля не уходят под лоб
-    R.parts.position.y = dy; R.parts.position.x = top ? FIT.dx || 0 : 0; R.parts.position.z = hz; R.parts.scale.x = sx; R.skull.scale.x = 7.7 * sx; R.skull.scale.y = 10.6 + dy / 2; R.skull.position.y = 1.2 + dy / 2; }
+    R.parts.position.y = R.parts.userData.hat ? Math.max(-0.6, dy) : dy;   // шапку ниже −0,6 см не опускаем: козырёк не на бровях
+    R.parts.position.x = top ? FIT.dx || 0 : 0; R.parts.position.z = hz; R.parts.scale.x = sx; R.skull.scale.x = 7.7 * sx; R.skull.scale.y = 10.6 + dy / 2; R.skull.position.y = 1.2 + dy / 2; }
   const gg = R.parts.userData.googly;
   if (gg){ const dn = new THREE.Vector3(0, -1, 0).transformDirection(new THREE.Matrix4().copy(R.head.matrix).invert());   // «вниз» в системе головы
     gg.forEach((e, j) => { const a = Math.atan2(dn.y, dn.x) + (j ? 0.55 : -0.35), r = e.max * 0.95; e.pm.position.x = e.x0 + Math.cos(a) * r; e.pm.position.y = e.y0 + Math.sin(a) * r; }); }
