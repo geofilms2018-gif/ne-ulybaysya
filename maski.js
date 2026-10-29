@@ -20,9 +20,20 @@ export const MASKS = [
   {id: 'klub',     name: 'Клуб без баб',  style: 'meme'},
   {id: 'fembo',    name: 'ФЕМБОЙ',        style: 'meme'},
   {id: 'clown',    name: 'Клоун',         style: 'meme'},
-  {id: 'chef',     name: 'Повар',         style: 'hat'},
-  {id: 'santa',    name: 'Санта',         style: 'hat'},
+  {id: 'latex',    name: 'Зайка в латексе', style: 'glam'},
+  {id: 'mult',     name: 'Мультяшные глаза', style: 'meme'},
+  {id: 'cyclop',   name: 'Циклоп',        style: 'meme'},
+  {id: 'kaki',     name: 'Брови-какашки', style: 'meme'},
+  {id: 'ushi',     name: 'Уши-локаторы',  style: 'meme'},
+  {id: 'puchi',    name: 'Пучеглазик',    style: 'meme'},
+  {id: 'durshlag', name: 'Дуршлаг',       style: 'hat'},
+  {id: 'vertolet', name: 'Кепка-вертолёт', style: 'hat'},
+  {id: 'shnobel',  name: 'Шнобель',       style: 'meme'},
+  {id: 'alien',    name: 'Пришелец',      style: 'meme'},
+  {id: 'mozg',     name: 'Мегамозг',      style: 'meme'},
 ];
+// маски «на голове» (3D и деформации лица) — maski3d.js, грузится при первом выборе; превью карточек — maski/prev/<id>.webp
+export const MASKS3D = new Set(['crown', 'wreath', 'angel', 'unicorn', 'deer', 'bunny', 'hearts', 'klub', 'fembo', 'clown', 'latex', 'mult', 'cyclop', 'kaki', 'ushi', 'puchi', 'durshlag', 'vertolet', 'shnobel', 'alien', 'mozg']);
 
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
 const P = (lm, i, w, h) => ({x: lm[i].x * w, y: lm[i].y * h});
