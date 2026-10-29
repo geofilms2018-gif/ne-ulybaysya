@@ -22,9 +22,9 @@ const BAND = {
   unicorn: {file: 'unicorn', cx: 100, yt: 190, yw: 290, a: 98.5, ok: 0.85},
   deer:    {file: 'deer',    cx: 190, yt: 200, yw: 300, a: 97.5, ok: 0.8},
   bunny:   {file: 'bunny',   cx: 160, yt: 222, yw: 330, a: 101.5, ok: 0.75},
-  hearts:  {file: 'hearts',  cx: 180, yt: 133, yw: 240, a: 104.5, ok: 0.75},
-  klub:    {file: 'klub',    cx: 160, yt: 178, yw: 280, a: 102.5, ok: 0.45, text: {lines: ['КЛУБ', 'БЕЗ БАБ'], cx: 159.5, cy: 82.5, bw: 285, bh: 140, ang: 0}},
-  fembo:   {file: 'fembo',   cx: 165, yt: 189, yw: 290, a: 98.5, ok: 0.45, text: {lines: ['ФЕМБОЙ'], cx: 159.5, cy: 97, bw: 255, bh: 110, ang: -0.129}},
+  hearts:  {file: 'hearts',  cx: 180, yt: 133, yw: 240, a: 104.5, ok: 0.75, lift: 2.2},
+  klub:    {file: 'klub',    cx: 160, yt: 178, yw: 280, a: 102.5, ok: 0.45, lift: 0.8, text: {lines: ['КЛУБ', 'БЕЗ БАБ'], cx: 159.5, cy: 82.5, bw: 285, bh: 140, ang: 0}},
+  fembo:   {file: 'fembo',   cx: 165, yt: 189, yw: 290, a: 98.5, ok: 0.45, lift: 0.8, text: {lines: ['ФЕМБОЙ'], cx: 159.5, cy: 97, bw: 255, bh: 110, ang: -0.129}},
 };
 // маски этого модуля (остальные — 2D в maski.js)
 export const IDS = new Set(['crown', 'wreath', 'angel', ...Object.keys(BAND), 'clown', 'latex', 'mult', 'cyclop', 'kaki', 'ushi', 'puchi', 'durshlag', 'vertolet', 'alien', 'mozg']);
@@ -60,7 +60,7 @@ function initR(){
   const faceOcc = new THREE.Mesh(fg, occ); faceOcc.renderOrder = -1; head.add(faceOcc);
   const skull = new THREE.Mesh(new THREE.SphereGeometry(1, 48, 32), occ); skull.scale.set(7.7, 10.6, 8.0); skull.position.set(0, 1.2, -4.0); skull.renderOrder = -1; head.add(skull);
   const parts = new THREE.Group(); head.add(parts);
-  R = {renderer, scene, camera, head, parts, env, w: 0, h: 0};
+  R = {renderer, scene, camera, head, parts, env, skull, w: 0, h: 0};
   return R;
 }
 const texLoader = new THREE.TextureLoader();
@@ -129,7 +129,7 @@ async function buildBand(key, G){
   const NY = Math.round(ih / 2), geo = new THREE.PlaneGeometry(1, 1, 1, NY), p = geo.attributes.position, uv = geo.attributes.uv;
   for (let i = 0; i < p.count; i++){ const u = uv.getX(i), v = uv.getY(i), px = u * iw, py = (1 - v) * ih; p.setXYZ(i, (px - c.cx) * k * sx(py), Y(py) - HC, 0); }
   const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({map: tex, transparent: true, alphaTest: 0.03, side: THREE.DoubleSide})); m.renderOrder = 1;
-  const grp = new THREE.Group(); grp.position.set(0, HC, -4.0); grp.rotation.x = TILT; grp.add(m); G.add(grp);
+  const grp = new THREE.Group(); grp.position.set(0, HC + (c.lift || 0), -4.0); grp.rotation.x = TILT; grp.add(m); G.add(grp);
 }
 // корона (прежняя из игры, кодом, 1:1 по пикселям): карточка на макушке 3D-головы
 function buildCrown(G){
@@ -278,6 +278,28 @@ function field(g, x0, y0, x1, y1, d){
 }
 const sstep = (a, b, v) => { const t = Math.max(0, Math.min(1, (v - a) / (b - a))); return t * t * (3 - 2 * t); };
 
+// купол головы: лоб от бровей до линии волос тянется вверх ×K и расширяется к макушке (wide), над лбом всё сдвигается целиком; к вискам и выше головы гаснет
+function dome(g, LPx, FW, K, wide){
+  const up = {x: (LPx(10).x - LPx(152).x), y: (LPx(10).y - LPx(152).y)}, ul = Math.hypot(up.x, up.y) || 1; up.x /= ul; up.y /= ul;
+  const side = {x: -up.y, y: up.x}, ctr = LPx(9), along = p => (p.x - ctr.x) * up.x + (p.y - ctr.y) * up.y, across = p => (p.x - ctr.x) * side.x + (p.y - ctr.y) * side.y;
+  const brow = Math.max(along(LPx(105)), along(LPx(334))) + FW * 0.04, top = along(LPx(10)) + FW * 0.15, Hf = Math.max(FW * 0.25, top - brow), ext = Hf * (K - 1);
+  const c = LPx(10), sgx = FW * 0.55;
+  field(g, c.x - FW * 1.3, c.y - FW * 2.0, c.x + FW * 1.3, c.y + FW * 0.6, (x, y) => { const p = {x, y}, a = along(p); if (a <= brow) return [0, 0];
+    const src = a < brow + K * Hf ? brow + (a - brow) / K : a - ext, fade = sstep(top + ext + FW * 1.2, top + ext + FW * 0.4, a), cx = across(p);
+    const w = Math.exp(-(cx ** 2) / (2 * sgx * sgx)) * fade, D = (a - src) * w, h = sstep(brow, brow + K * Hf, a), Ds = cx * (1 - 1 / (1 + wide * h)) * fade;
+    return [up.x * D + side.x * Ds, up.y * D + side.y * Ds]; });
+}
+// оттенок кожи по овалу лица (с запасом на лоб), рот и глаза — живой кадр; светотень сохраняется (режим «цвет»)
+function tint(g, lm, W, H, rgb){
+  const P = i => [lm[i].x * W, lm[i].y * H], f = document.createElement('canvas'); f.width = W; f.height = H; const x = f.getContext('2d');
+  const up = [lm[10].x * W - lm[152].x * W, lm[10].y * H - lm[152].y * H];
+  x.filter = `blur(${Math.round(Math.hypot(...up) * 0.05)}px)`; x.fillStyle = `rgb(${rgb})`; x.beginPath();
+  OVAL.forEach((i, k) => { let [px, py] = P(i); const t = Math.max(0, (lm[152].y - lm[i].y) / (lm[152].y - lm[10].y) - 0.55); px += up[0] * t * 0.9; py += up[1] * t * 0.9; k ? x.lineTo(px, py) : x.moveTo(px, py); }); x.closePath(); x.fill();
+  x.filter = 'none'; x.globalCompositeOperation = 'destination-out'; x.filter = `blur(${Math.round(Math.hypot(...up) * 0.015)}px)`;
+  for (const ids of [LIPP, EYE_A, EYE_B]){ x.beginPath(); ids.forEach((i, k) => { const [px, py] = P(i); k ? x.lineTo(px, py) : x.moveTo(px, py); }); x.closePath(); x.lineWidth = Math.hypot(...up) * 0.03; x.stroke(); x.fill(); }
+  g.save(); g.globalCompositeOperation = 'color'; g.globalAlpha = 0.75; g.drawImage(f, 0, 0); g.restore();
+}
+
 function warps2d(g, id, lm, W, H){
   const LPx = i => ({x: lm[i].x * W, y: lm[i].y * H}), FW = Math.hypot((lm[454].x - lm[234].x) * W, (lm[454].y - lm[234].y) * H);
   const safeR = (c, Rr) => Math.min(Rr, Math.min(...LIPP.map(i => Math.hypot(LPx(i).x - c.x, LPx(i).y - c.y))) - FW * 0.03);
@@ -293,16 +315,11 @@ function warps2d(g, id, lm, W, H){
     for (const i of [468, 473]){ const e = LPx(i); eraseEye(g, e, {x: e.x, y: e.y - FW * 0.2}, FW * 0.16, FW * 0.09); }
     own(up);
   }
-  if (id === 'mozg'){   // лоб от бровей до линии волос растягивается вверх ×1,8 — только по высоте; над лбом всё сдвигается целиком; к вискам и выше головы гаснет
-    const up = {x: (LPx(10).x - LPx(152).x), y: (LPx(10).y - LPx(152).y)}, ul = Math.hypot(up.x, up.y) || 1; up.x /= ul; up.y /= ul;
-    const side = {x: -up.y, y: up.x}, ctr = LPx(9), along = p => (p.x - ctr.x) * up.x + (p.y - ctr.y) * up.y, across = p => (p.x - ctr.x) * side.x + (p.y - ctr.y) * side.y;
-    const brow = Math.max(along(LPx(105)), along(LPx(334))) + FW * 0.04, top = along(LPx(10)) + FW * 0.15, Hf = Math.max(FW * 0.25, top - brow), K = 1.8, ext = Hf * (K - 1);
-    const c = LPx(10), sgx = FW * 0.5;
-    field(g, c.x - FW * 1.2, c.y - FW * 1.6, c.x + FW * 1.2, c.y + FW * 0.6, (x, y) => { const p = {x, y}, a = along(p); if (a <= brow) return [0, 0];
-      const src = a < brow + K * Hf ? brow + (a - brow) / K : a - ext, fade = sstep(top + ext + FW * 1.1, top + ext + FW * 0.4, a);
-      const w = Math.exp(-(across(p) ** 2) / (2 * sgx * sgx)) * fade, D = (a - src) * w; return [up.x * D, up.y * D]; });
-  }
-  if (id === 'alien'){ for (const i of [468, 473]){ const c = LPx(i); warp(g, c, FW * 0.17, 1.15, 1); } const n = LPx(4); warp(g, n, safeR(n, FW * 0.14), -0.55, 1); const c = LPx(151); warp(g, {x: c.x, y: c.y - FW * 0.05}, FW * 0.4, 0.8, 1.03); }
+  if (id === 'mozg') dome(g, LPx, FW, 2.6, 0.45);   // лоб от бровей вверх ×2,6 и шире к макушке
+  if (id === 'alien'){   // пришелец: высокий купол черепа, кожа серо-зелёная, огромные чёрные глаза, нос-точка; рот живой
+    dome(g, LPx, FW, 1.9, 0.3); tint(g, lm, W, H, [150, 180, 155]);
+    for (const i of [468, 473]){ const c = LPx(i); warp(g, c, FW * 0.2, 1.35, 1); }
+    const n = LPx(4); warp(g, n, safeR(n, FW * 0.14), -0.6, 1); }
   // Уши-локаторы = уши + шнобель (Гео 29.10: «маски, шнобели, уши — одна маска»): нос как у Шнобеля, лоб чуть меньше
   if (id === 'ushi'){ const a4 = LPx(4), a6 = LPx(6), c = {x: a4.x * 0.7 + a6.x * 0.3, y: a4.y * 0.7 + a6.y * 0.3}; warp(g, c, safeR(c, FW * 0.34), 1.7, 1.03); warp(g, LPx(151), FW * 0.26, -0.3, 1); }
 }
@@ -320,6 +337,47 @@ function kaki(g, lm, W, H){   // брови-какашки: коричневая
   }
 }
 
+// ---------- верх головы игрока по силуэту (сегментация MediaPipe): ободки и шапки садятся на свою голову, а не на «среднюю» ----------
+// Верх силуэта (с волосами) над точкой 10 в долях высоты лица (10→152) → сдвиг в см от головы-эталона; раз в FIT_EVERY кадров, сглаживание.
+const FIT_EVERY = 6, INSET = 0.17, FIT_LO = -5, FIT_HI = 3;
+let SEG = null, segP = null, fitN = 0; const FIT = {dy: 0, sx: 1, n: 0, r: 0, w: 0, T: null, fh: 0, gap: 0}, W0 = 1.12;
+function segInit(){
+  return segP || (segP = (async () => {
+    const {ImageSegmenter, FilesetResolver} = await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs');
+    const fs = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm');
+    SEG = await ImageSegmenter.createFromOptions(fs, {baseOptions: {modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite', delegate: 'CPU'}, runningMode: 'IMAGE', outputConfidenceMasks: true, outputCategoryMask: false});
+  })().catch(e => { console.warn('maski3d seg', e); segP = null; }));
+}
+const fitC = document.createElement('canvas');
+function headFit(g, lm, W, H){
+  if (!SEG || (fitN++ % FIT_EVERY && FIT.n)) return;
+  const sw = 160, sh = Math.round(H / W * sw), s = sw / W; if (fitC.width !== sw || fitC.height !== sh){ fitC.width = sw; fitC.height = sh; }
+  fitC.getContext('2d').drawImage(g.canvas, 0, 0, sw, sh);
+  let m; try { const r = SEG.segment(fitC); m = r.confidenceMasks[0].getAsFloat32Array(); r.close(); } catch(e){ return; }
+  const P = i => ({x: lm[i].x * W * s, y: lm[i].y * H * s}), a = P(10), b = P(152), ux = a.x - b.x, uy = a.y - b.y, fh = Math.hypot(ux, uy); if (fh < 8) return;
+  const up = {x: ux / fh, y: uy / fh}, sd = {x: -up.y, y: up.x}, fw = Math.hypot(P(454).x - P(234).x, P(454).y - P(234).y);
+  const at = (x, y) => { const X = Math.round(x), Y = Math.round(y); return X < 1 || Y < 1 || X >= sw - 1 || Y >= sh - 1 ? -1 : m[Y * sw + X]; };
+  const tops = [-0.2, -0.1, 0, 0.1, 0.2].map(o => { const x0 = a.x + sd.x * fw * o, y0 = a.y + sd.y * fw * o; let t = 0;
+    for (; t < fh * 1.6; t += 0.5){ const v = at(x0 + up.x * t, y0 + up.y * t); if (v < 0) return fh * 9; if (v < 0.5) break; } return t; });
+  if (tops.some(t => t >= fh * 1.6)) return;   // верх головы за кадром — оставляем как было
+  const tm = [...tops].sort((x, y) => x - y)[2], q = {x: a.x + up.x * tm * 0.45, y: a.y + up.y * tm * 0.45}, side = d => { let t = 0; for (; t < fw * 1.5; t += 0.5){ const v = at(q.x + sd.x * d * t, q.y + sd.y * d * t); if (v < 0) return NaN; if (v < 0.5) break; } return t; };
+  const wr = (side(1) + side(-1)) / fw, sx = isNaN(wr) ? FIT.sx : Math.max(0.82, Math.min(1.05, wr / W0));
+  FIT.r = tm / fh; FIT.w = wr; FIT.sx = FIT.n ? FIT.sx * 0.7 + sx * 0.3 : sx;
+  FIT.T = {x: (a.x + up.x * tm) / s, y: (a.y + up.y * tm) / s}; FIT.up = up; FIT.fh = fh / s; FIT.fresh = true;
+}
+export function fitReset(){ FIT.n = 0; FIT.dy = 0; FIT.sx = 1; FIT.T = null; fitN = 0; }
+// сдвиг шапки по высоте головы: точка касания (верх дуги ободка) в проекции камеры ложится на верх силуэта (минус INSET высоты лица)
+const _q = new THREE.Vector3();
+function fitDy(W, H){
+  if (!FIT.fresh || !FIT.T) return; FIT.fresh = false;
+  const P = y => { _q.set(0, HC + (HT - HC) * Math.cos(TILT), -4 + (HT - HC) * Math.sin(TILT) + 0 * y); _q.y += y; _q.applyMatrix4(R.head.matrix).project(R.camera); return {x: (_q.x + 1) / 2 * W, y: (1 - _q.y) / 2 * H}; };
+  const p0 = P(0), p1 = P(1), up = FIT.up, along = p => p.x * up.x + p.y * up.y, ppc = along(p1) - along(p0); if (ppc < 0.5) return;
+  const gap = (along(FIT.T) - along(p0)) / FIT.fh; FIT.gap = gap;
+  const dy = Math.max(FIT_LO, Math.min(FIT_HI, (gap - INSET) * FIT.fh / ppc));
+  FIT.dy = FIT.n ? FIT.dy * 0.7 + dy * 0.3 : dy; FIT.n++;
+}
+export const fitState = FIT;
+
 // ---------- выбор маски и кадр ----------
 const has3d = id => id === 'crown' || id === 'angel' || id === 'latex' || id === 'mult' || BAND[id] || ASSET[id];
 let cur = '', ready = '', loading = null;
@@ -330,13 +388,15 @@ export function prepare(id){
   return loading = (async () => {
     await loadObj(); initR();
     const G = new THREE.Group();
+    const onTop = id === 'crown' || id === 'angel' || BAND[id];   // шапки-ассеты (дуршлаг, кепка, лавр) облегают голову сами — их не двигаем
+    if (onTop) await segInit();
     if (id === 'crown') buildCrown(G);
     else if (id === 'angel') await buildHalo(G);
     else if (BAND[id]) await buildBand(id, G);
     else if (id === 'clown') await buildPenni();
     else if (ASSET[id]) for (const a of [].concat(ASSET[id])){ if (a.kind === 'hat') await buildHat(a, G); else if (a.kind === 'face') await buildFace(a, G); else await buildPic(a, G); }
     if (cur !== id) return;
-    R.parts.clear(); R.parts.add(G); R.parts.userData = G.userData; ready = id;
+    G.userData.onTop = !!onTop; R.parts.clear(); R.parts.add(G); R.parts.userData = G.userData; ready = id;
   })().catch(e => { console.warn('maski3d', id, e); if (cur === id) cur = ''; }).finally(() => { loading = null; });
 }
 // кадр: g — холст с кадром камеры; lm — точки лица; M — матрица лица (16 чисел) или null
@@ -351,6 +411,8 @@ export function draw(g, id, lm, M){
   if (id === 'kaki'){ kaki(g, lm, W, H); return; }
   if (!has3d(id) || !M) return;
   R.head.matrix.fromArray(M); R.head.matrixWorldNeedsUpdate = true;
+  { const top = R.parts.userData.onTop; if (top){ headFit(g, lm, W, H); R.parts.position.y = 0; fitDy(W, H); } const dy = top ? FIT.dy : 0, sx = top ? FIT.sx : 1;   // шапка и череп-окклюдер — на высоту своей головы
+    R.parts.position.y = dy; R.parts.scale.x = sx; R.skull.scale.x = 7.7 * sx; R.skull.scale.y = 10.6 + dy / 2; R.skull.position.y = 1.2 + dy / 2; }
   const gg = R.parts.userData.googly;
   if (gg){ const dn = new THREE.Vector3(0, -1, 0).transformDirection(new THREE.Matrix4().copy(R.head.matrix).invert());   // «вниз» в системе головы
     gg.forEach((e, j) => { const a = Math.atan2(dn.y, dn.x) + (j ? 0.55 : -0.35), r = e.max * 0.95; e.pm.position.x = e.x0 + Math.cos(a) * r; e.pm.position.y = e.y0 + Math.sin(a) * r; }); }
