@@ -27,7 +27,7 @@ const BAND = {
   fembo:   {file: 'fembo',   cx: 165, yt: 189, yw: 290, a: 98.5, ok: 0.45, lift: 0.8, text: {lines: ['ФЕМБОЙ'], cx: 159.5, cy: 97, bw: 255, bh: 110, ang: -0.129}},
 };
 // маски этого модуля (остальные — 2D в maski.js)
-export const IDS = new Set(['crown', 'wreath', 'angel', ...Object.keys(BAND), 'clown', 'latex', 'mult', 'cyclop', 'kaki', 'ushi', 'puchi', 'durshlag', 'vertolet', 'alien', 'mozg']);
+export const IDS = new Set(['crown', 'wreath', 'angel', ...Object.keys(BAND), 'clown', 'latex', 'mult', 'cyclop', 'kaki', 'ushi', 'puchi', 'durshlag', 'vertolet', 'alien', 'mozg', 'spa']);
 
 // ---------- каноническое лицо: вершины, треугольники, UV ----------
 let CV, CF, UV;
@@ -220,6 +220,68 @@ function drawPenni(g, lm, W, H){
   r.render(p.noseScene, p.noseCam); r.toneMapping = THREE.ACESFilmicToneMapping; g.drawImage(r.domElement, 0, 0);
 }
 
+// ---------- Спа: мятная глина из атласа генерации (только краска, мазки и рельеф — свои) на живой сетке лица + шапочка для душа вокруг лица ----------
+// Принцип клоуна: краска = пиксели мятного цвета из атласа 3_spa_maska; глаза, брови, кожа, рот — живой кадр; светотень с кадра; шапочка — картинка генерации, лицо в её проёме.
+let SP = null;
+async function buildSpa(){
+  if (SP) return SP;
+  const T = 1024, paint = document.createElement('canvas'); paint.width = paint.height = T; const pg = paint.getContext('2d', {willReadFrequently: true});
+  const U = i => ({x: UV[i * 2] * T, y: (1 - UV[i * 2 + 1]) * T});
+  const path = (x, ids) => { x.beginPath(); ids.forEach((i, k) => { const p = U(i); k ? x.lineTo(p.x, p.y) : x.moveTo(p.x, p.y); }); x.closePath(); };
+  const ti = new Image(); ti.crossOrigin = 'anonymous'; ti.src = BASE + 'spa_grim_col.webp'; await ti.decode(); pg.drawImage(ti, 0, 0, T, T);
+  { // глина: зелёный не ниже красного (мята и светлые мазки); кожа и глаза (тёплые) — прочь; дырки в слое закрыты (размытие + порог)
+    const d = pg.getImageData(0, 0, T, T), D = d.data, mk = document.createElement('canvas'); mk.width = mk.height = T; const mg = mk.getContext('2d', {willReadFrequently: true}), md = mg.createImageData(T, T);
+    for (let o = 0; o < D.length; o += 4){ const r = D[o], g2 = D[o + 1]; md.data[o + 3] = Math.round(255 * Math.max(0, Math.min(1, (g2 - r + 6) / 14))); }
+    mg.putImageData(md, 0, 0); const bl = document.createElement('canvas'); bl.width = bl.height = T; const bx = bl.getContext('2d', {willReadFrequently: true}); bx.filter = 'blur(7px)'; bx.drawImage(mk, 0, 0);
+    const A = bx.getImageData(0, 0, T, T).data;
+    for (let o = 0; o < D.length; o += 4){ const a = Math.max(0, Math.min(1, (A[o + 3] / 255 - 0.3) / 0.25)); D[o + 3] = Math.round(255 * a);
+      if (D[o + 1] < D[o]){ const l = (D[o] + D[o + 1] + D[o + 2]) / 3; D[o] = l * 0.78; D[o + 1] = l * 1.02; D[o + 2] = l * 0.9; } }   // закрытые дырки (там кожа) — в цвет глины
+    pg.putImageData(d, 0, 0); }
+  { const m = document.createElement('canvas'); m.width = m.height = T; const mx = m.getContext('2d'); mx.fillStyle = '#000'; path(mx, OVAL); mx.filter = 'blur(10px)'; mx.fill();   // за овалом лица — смазанные края атласа: прочь
+    pg.globalCompositeOperation = 'destination-in'; pg.drawImage(m, 0, 0); pg.globalCompositeOperation = 'source-over'; }
+  { const c = document.createElement('canvas'); c.width = c.height = T; const x = c.getContext('2d'); x.fillStyle = x.strokeStyle = '#000'; x.lineJoin = 'round';
+    path(x, LIPP); x.lineWidth = T * 0.03; x.stroke(); x.fill(); for (const e of [EYE_A, EYE_B]){ path(x, e); x.lineWidth = T * 0.012; x.stroke(); x.fill(); }
+    pg.globalCompositeOperation = 'destination-out'; pg.filter = 'blur(3px)'; pg.drawImage(c, 0, 0); pg.filter = 'none'; pg.globalCompositeOperation = 'source-over'; }
+  // шапочка: проём (внутренность за оборкой) вырезан, лицо будет в нём
+  const capImg = new Image(); capImg.crossOrigin = 'anonymous'; capImg.src = BASE + 'spa_shapochka.webp'; await capImg.decode();
+  const CAP = document.createElement('canvas'); CAP.width = capImg.naturalWidth; CAP.height = capImg.naturalHeight;
+  { const x = CAP.getContext('2d'); x.drawImage(capImg, 0, 0); x.globalCompositeOperation = 'destination-out'; x.save(); x.translate(SPA_CAP.cx, SPA_CAP.cy); x.scale(1, SPA_CAP.ry / SPA_CAP.rx);
+    const k = x.createRadialGradient(0, 0, 0, 0, 0, SPA_CAP.rx); k.addColorStop(0, '#000'); k.addColorStop(0.93, '#000'); k.addColorStop(1, 'rgba(0,0,0,0)'); x.fillStyle = k; x.beginPath(); x.arc(0, 0, SPA_CAP.rx, 0, Math.PI * 2); x.fill(); x.restore(); }
+  const camP = new THREE.OrthographicCamera(-1, 1, 1, -1, -1, 1), fgeo = new THREE.BufferGeometry();
+  fgeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(468 * 3), 3)); fgeo.setAttribute('uv', new THREE.BufferAttribute(UV, 2)); fgeo.setIndex(CF.flat());
+  const fcol = new Float32Array(468 * 4).fill(1); fgeo.setAttribute('color', new THREE.BufferAttribute(fcol, 4));
+  const ptex = new THREE.CanvasTexture(paint); ptex.colorSpace = THREE.SRGBColorSpace;
+  const sceneP = new THREE.Scene(); sceneP.add(new THREE.Mesh(fgeo, new THREE.MeshBasicMaterial({map: ptex, transparent: true, vertexColors: true, side: THREE.DoubleSide, depthTest: false})));
+  const layer = document.createElement('canvas'), shade = document.createElement('canvas'), capL = document.createElement('canvas');
+  SP = {CAP, fgeo, fcol, sceneP, camP, layer, lg: layer.getContext('2d'), shade, sg: shade.getContext('2d', {willReadFrequently: true}), capL, cg: capL.getContext('2d')};
+  return SP;
+}
+// проём шапочки в пикселях картинки (737×694): эллипс внутри оборки
+const SPA_CAP = {cx: 362, cy: 470, rx: 190, ry: 172, top: 298};
+function drawSpa(g, lm, W, H){
+  const p = SP, P = k => ({x: lm[k].x * W, y: lm[k].y * H}), f = faceFrame(lm, W, H), {lg, sg, layer, shade, cg, capL} = p;
+  if (layer.width !== W || layer.height !== H){ layer.width = shade.width = capL.width = W; layer.height = shade.height = capL.height = H; }
+  lg.clearRect(0, 0, W, H);
+  const pa = p.fgeo.attributes.position.array; for (let k = 0; k < 468; k++){ pa[k * 3] = lm[k].x * 2 - 1; pa[k * 3 + 1] = 1 - lm[k].y * 2; pa[k * 3 + 2] = 0; } p.fgeo.attributes.position.needsUpdate = true;
+  { const FWn = Math.hypot(lm[454].x - lm[234].x, lm[454].y - lm[234].y); for (let k = 0; k < 468; k++){ const dz = (lm[k].z - lm[1].z) / FWn; p.fcol[k * 4 + 3] = Math.max(0, Math.min(1, (0.85 - dz) / 0.15)); } p.fgeo.attributes.color.needsUpdate = true; }
+  const r = R.renderer; r.toneMapping = THREE.NoToneMapping; r.render(p.sceneP, p.camP); r.toneMapping = THREE.ACESFilmicToneMapping; lg.drawImage(r.domElement, 0, 0);
+  lg.save(); lg.globalCompositeOperation = 'destination-out'; lg.beginPath(); LIPP.forEach((k, j) => { const q = P(k); j ? lg.lineTo(q.x, q.y) : lg.moveTo(q.x, q.y); }); lg.closePath(); lg.lineWidth = f.W * 0.03; lg.lineJoin = 'round'; lg.filter = 'blur(2px)'; lg.stroke(); lg.fill(); lg.restore();
+  // светотень с кадра, как у клоуна, но слабее — у глины своя фактура мазков
+  sg.globalCompositeOperation = 'source-over'; sg.filter = 'none'; sg.clearRect(0, 0, W, H);
+  let t = 0, n = 0; sg.drawImage(g.canvas, 0, 0); for (const k of [50, 280, 151, 9]){ const q = P(k), d = sg.getImageData(Math.round(q.x) - 2, Math.round(q.y) - 2, 5, 5).data; for (let m = 0; m < d.length; m += 4){ t += 0.3 * d[m] + 0.59 * d[m + 1] + 0.11 * d[m + 2]; n++; } }
+  sg.clearRect(0, 0, W, H); sg.filter = `grayscale(1) brightness(${Math.min(5, 225 / Math.max(25, t / Math.max(1, n))).toFixed(2)}) contrast(1.2)`; sg.drawImage(g.canvas, 0, 0); sg.filter = 'none';
+  sg.globalCompositeOperation = 'destination-in'; sg.drawImage(layer, 0, 0);
+  g.drawImage(layer, 0, 0);
+  g.save(); g.globalCompositeOperation = 'multiply'; g.globalAlpha = 0.55; g.drawImage(shade, 0, 0); g.restore();
+  // шапочка: верх проёма — над линией лба, ширина проёма — 1,08 ширины лица; ниже скул гаснет; на повороте сжата
+  const sq = 1 - 0.3 * Math.min(1, Math.abs(f.yaw)), C = SPA_CAP, k = 1.08 / (2 * C.rx);
+  cg.setTransform(1, 0, 0, 1, 0, 0); cg.clearRect(0, 0, W, H);
+  cg.save(); cg.translate(f.x, f.y); cg.rotate(f.ang); cg.scale(f.W * sq, f.W); cg.translate(f.nose.x * 0.35, -0.36); cg.scale(k, k); cg.translate(-C.cx, -C.top); cg.drawImage(p.CAP, 0, 0);
+  cg.globalCompositeOperation = 'destination-out'; const gr = cg.createLinearGradient(0, C.cy + C.ry * 0.05, 0, C.cy + C.ry * 0.55); gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(1, '#000');
+  cg.fillStyle = gr; cg.fillRect(-200, C.cy + C.ry * 0.05, p.CAP.width + 400, p.CAP.height); cg.restore();
+  g.drawImage(capL, 0, 0);
+}
+
 // ---------- деформации по пикселям ----------
 function warp(g, c, R0, s, light = 1){
   const W = g.canvas.width, H = g.canvas.height;
@@ -394,6 +456,7 @@ export function prepare(id){
     else if (id === 'angel') await buildHalo(G);
     else if (BAND[id]) await buildBand(id, G);
     else if (id === 'clown') await buildPenni();
+    else if (id === 'spa') await buildSpa();
     else if (ASSET[id]) for (const a of [].concat(ASSET[id])){ if (a.kind === 'hat') await buildHat(a, G); else if (a.kind === 'face') await buildFace(a, G); else await buildPic(a, G); }
     if (cur !== id) return;
     G.userData.onTop = !!onTop; G.userData.hat = hat; R.parts.clear(); R.parts.add(G); R.parts.userData = G.userData; ready = id;
@@ -408,6 +471,7 @@ export function draw(g, id, lm, M){
   if (ready !== id) return;
   if (R.w !== W || R.h !== H){ R.renderer.setSize(W, H, false); R.camera.aspect = W / H; R.camera.updateProjectionMatrix(); R.w = W; R.h = H; }
   if (id === 'clown'){ drawPenni(g, lm, W, H); return; }
+  if (id === 'spa'){ drawSpa(g, lm, W, H); return; }
   if (id === 'kaki'){ kaki(g, lm, W, H); return; }
   if (!has3d(id) || !M) return;
   R.head.matrix.fromArray(M); R.head.matrixWorldNeedsUpdate = true;
