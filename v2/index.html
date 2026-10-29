@@ -309,6 +309,7 @@ let m3 = null, m3p = null;
 const loadM3 = () => m3p || (m3p = import("../maski3d.js").then(m => m3 = m).catch(e => { m3p = null; throw e; }));
 const PREV = {};   // превью карточек масок на голове: maski/prev/<id>.webp
 const prevImg = id => { if (!PREV[id]){ const im = new Image(); im.src = "../maski/prev/" + id + ".webp"; im.onload = () => { try { buildMaskBar(); } catch(e){} }; PREV[id] = im; } return PREV[id]; };
+import * as NN from "../maski_nn.js";   // нейро-маски «Бэйби» / «Старик» (тест для админа)
 preloadMasks().then(() => { try { buildMaskBar(); } catch(e){} });
 
 const $ = id => document.getElementById(id);
@@ -769,13 +770,17 @@ function okAvatar(a){ return typeof a === 'string' && a.startsWith('data:image/j
 
 // ---------- маски: детектор смотрит на чистую камеру, а в звонки уходит кадр с маской ----------
 const ALLMASKS = new URLSearchParams(location.search).has('allmasks');   // для скринов всех масок
+// тест-маски (admin: true в maski.js) видит и надевает только админ — тот же id, что ADMIN_IDS сервера; в магазин не выставлены
+const IS_ADMIN = ALLMASKS || (() => { try { const u = window.Telegram && Telegram.WebApp && Telegram.WebApp.initDataUnsafe && Telegram.WebApp.initDataUnsafe.user; return !!u && [1344733846].includes(u.id); } catch(e){ return false; } })();
+const MASKS_V = MASKS.filter(m => !m.admin || IS_ADMIN);
 let maskId = '', maskStart = 0, faceLm = null, faceMat = null, outCv = null, outG = null, maskTrack = null, maskStream = null;
 function drawOut(v, now){
   const w = v.videoWidth, h = v.videoHeight;
   if (outCv.width !== w || outCv.height !== h){ outCv.width = w; outCv.height = h; }
   outG.drawImage(v, 0, 0, w, h);
   if (!faceLm) return;
-  if (MASKS3D.has(maskId)){ if (m3) m3.draw(outG, maskId, faceLm, faceMat); else loadM3().catch(() => {}); }
+  if (NN.IDS.has(maskId)) NN.draw(outG, maskId, faceLm, v);
+  else if (MASKS3D.has(maskId)){ if (m3) m3.draw(outG, maskId, faceLm, faceMat); else loadM3().catch(() => {}); }
   else drawMask(outG, maskId, faceFrame(faceLm, w, h), now / 1000, maskStart / 1000);
 }
 function camTrack(){ return stream ? stream.getVideoTracks()[0] : null; }
@@ -783,6 +788,7 @@ function vidTrack(){ return maskId && maskTrack ? maskTrack : camTrack(); }
 function setMask(id){
   maskId = id || ''; maskStart = performance.now();
   if (MASKS3D.has(maskId)) loadM3().then(m => m.prepare(maskId)).catch(() => {});
+  if (NN.IDS.has(maskId)) NN.prepare(maskId);
   if (maskId && !outCv){
     outCv = document.createElement('canvas'); outCv.width = 480; outCv.height = 360; outG = outCv.getContext('2d');
     maskStream = outCv.captureStream(15); maskTrack = maskStream.getVideoTracks()[0];
@@ -799,7 +805,7 @@ function setMask(id){
 let maskStyle = '';
 const shop = {vip: false, owned: new Set(), prices: {}, free: new Set(MASKS.map(m => m.id)), vipOnly: new Set(), vipExcept: new Set()};   // vipExcept — маски, которые VIP не открывает (тест покупки за ⭐)
 const isVip = () => shop.vip;
-const maskOpen = m => !m.id || ALLMASKS || (shop.vip && !shop.vipExcept.has(m.id)) || shop.free.has(m.id) || shop.owned.has(m.id);
+const maskOpen = m => !m.id || (m.admin ? IS_ADMIN : ALLMASKS || (shop.vip && !shop.vipExcept.has(m.id)) || shop.free.has(m.id) || shop.owned.has(m.id));
 async function loadShop(){
   if (!INIT_DATA()) return;
   try {
@@ -843,7 +849,8 @@ function maskCard(m, hint, size){
   g.translate(108, 0); g.scale(-1, 1);   // превью зеркально, как видео, — текст читается
   g.translate(15, 24); g.scale(.72, .72);   // уменьшаем: высокие маски (уши, рога) целиком помещаются в карточку
   g.fillStyle = '#3a3a3a'; g.beginPath(); g.ellipse(f.x, f.y + f.W * 0.55, f.W * 0.5, f.W * 0.62, 0, 0, Math.PI * 2); g.fill();
-  if (MASKS3D.has(m.id)){ const im = prevImg(m.id); g.setTransform(-1, 0, 0, 1, 108, 0); if (im.complete && im.naturalWidth) g.drawImage(im, 0, 0, 108, 108); }
+  if (NN.IDS.has(m.id)){ g.setTransform(1, 0, 0, 1, 0, 0); g.font = '58px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(m.id === 'baby' ? '👶' : '👴', 54, 62); }   // нейро-маска: значок вместо рисунка
+  else if (MASKS3D.has(m.id)){ const im = prevImg(m.id); g.setTransform(-1, 0, 0, 1, 108, 0); if (im.complete && im.naturalWidth) g.drawImage(im, 0, 0, 108, 108); }
   else if (m.id) drawMask(g, m.id, f, 0.6, -5);
   el.append(cv);
   el.insertAdjacentHTML('beforeend', '<span>' + esc(m.name) + '</span>' + (shop.vipOnly.has(m.id) && !open ? '<b class="vp">VIP</b>' : '') + (open ? '' : '<i>' + (price ? price + '⭐' : '🔒') + '</i>'));
@@ -851,9 +858,9 @@ function maskCard(m, hint, size){
   return el;
 }
 function buildMaskBar(){
-  const bar = $('maskBar'), st = $('maskStyles'), items = [{id: '', name: 'Без маски'}, ...MASKS.filter(m => !maskStyle || m.style === maskStyle)];
+  const bar = $('maskBar'), st = $('maskStyles'), items = [{id: '', name: 'Без маски'}, ...MASKS_V.filter(m => !maskStyle || m.style === maskStyle)];
   bar.innerHTML = ''; st.innerHTML = '';
-  const used = new Set(MASKS.map(m => m.style));
+  const used = new Set(MASKS_V.map(m => m.style));
   for (const [k, n] of [['', 'Все'], ...Object.entries(STYLES).filter(([k]) => used.has(k))]){
     const b = document.createElement('button'); b.className = 'sec' + (maskStyle === k ? ' on' : ''); b.textContent = n;
     b.onclick = () => { maskStyle = k; buildMaskBar(); }; st.append(b);
@@ -862,7 +869,7 @@ function buildMaskBar(){
   $('maskPaid').textContent = MASKS.every(maskOpen) ? 'Все маски открыты ✨' : shop.vip ? '👑 VIP: все маски открыты' : 'Платные маски — за звёзды ⭐ в Телеграме';
   for (const m of items) bar.append(maskCard(m, $('maskHint')));
   // панель в игре — те же карточки, без вкладок
-  const sh = $('mkRow'); if (sh){ sh.innerHTML = ''; for (const m of [{id: '', name: 'Без маски'}, ...MASKS]) sh.append(maskCard(m, null)); }
+  const sh = $('mkRow'); if (sh){ sh.innerHTML = ''; for (const m of [{id: '', name: 'Без маски'}, ...MASKS_V]) sh.append(maskCard(m, null)); }
   for (const el of document.querySelectorAll('.mk')) el.classList.toggle('on', el.dataset.id === maskId);
 }
 function openSheet(){ $('mkSheet').classList.add('on'); const on = $('mkRow').querySelector('.mk.on'); if (on) on.scrollIntoView({inline: 'center', block: 'nearest'}); }
@@ -1067,7 +1074,7 @@ setInterval(fallbackTick, RL_MS);
 // ---------- видео всех игроков (как FaceTime) ----------
 // Сначала каждый звонит каждому напрямую. Если гость↔гость не соединились за 3 с (сотовый NAT),
 // гость просит создателя переслать ему видео этого игрока: с создателем связь есть у всех.
-window.__nu = {dbg, decision: () => lastDecision, origin: () => Date.now() - performance.now(), skewMs: CLOCK_SKEW, hostNow: () => clk() + (isHost ? 0 : clkOff), clkInfo: () => ({off: Math.round(clkOff), rtt: Math.round(clkRtt), n: clkSamples.length}), simSmile: tt => reportSmile(snapshot(), 'тест', clk() + (tt - Date.now()), clipMake(performance.now())), duck: reset => { const r = {stat: {...duckStat}, minDb: +duckMin.toFixed(1), gainDb: +duckDb.toFixed(1), myDb: +myDb.toFixed(1), remDb: +remDb.toFixed(1), active: !!duck}; if (reset) duckMin = 0; return r; }, lastLoser: () => lastLoser, scoreImg: async src => { const im = new Image(); im.src = src; await im.decode(); const h = Math.round(DET_W * im.naturalHeight / im.naturalWidth); detCv.width = DET_W; detCv.height = h; detG.drawImage(im, 0, 0, DET_W, h); landmarker.detectForVideo(detCv, performance.now()); const r = landmarker.detectForVideo(detCv, performance.now() + 1), bs = r.faceBlendshapes && r.faceBlendshapes[0]; if (!bs) return null; const b = {}; for (const c of bs.categories) b[c.categoryName] = c.score; return {s: smileOf(b), corners: Math.min(b.mouthSmileLeft || 0, b.mouthSmileRight || 0), laugh: isLaugh(b)}; }, probe: () => { if (!landmarker || loopOn && (phase === 'prep' || phase === 'run' || maskId)) return undefined; const s = detectRaw($('cam')); return s == null ? s : {s, corners, laugh, thr: Math.max(SMILE_MIN, baseline + SMILE_OVER), both: SMILE_BOTH, hold: SMILE_HOLD_MS, base: baseline}; }, smileOf, isLaugh, thr: base => Math.max(SMILE_MIN, base + SMILE_OVER), aud: () => roster.filter(r => r.id !== myId).map(r => audioFlowing(r.id) ? 'rtc' : Date.now() - (pcmLast.get(r.id) || 0) < 3000 ? 'pcm' : 0), get srv(){ return srvUp(); }, get fps(){ return detFps; }, out: () => outCv ? outCv.toDataURL('image/png') : '', mask: id => setMask(id), recDraw: () => { const g = document.createElement('canvas').getContext('2d'); g.canvas.width = g.canvas.height = 200; const ok = recDrawCover(g, $('cam'), 0, 0, 200, 200, true); return [ok, ...g.getImageData(100, 100, 1, 1).data, $('cam').videoWidth, $('cam').currentTime]; }, recDbg: () => { const c = $('cam'), t = document.querySelector('.tile[data-id="me"]'); return {w: c.videoWidth, rs: c.readyState, p: c.paused, disp: getComputedStyle(c).display, rect: recRects.map(r => [r.t.dataset.id, Math.round(r.x), Math.round(r.y), Math.round(r.w), Math.round(r.h)]), px: rec ? [...rec.g.getImageData(100, 100, 1, 1).data] : null, mask: maskId, out: !!outCv}; }, caps: () => [...calls.values()].map(c => ({relay: c.relay, bps: c.peerConnection.getSenders().filter(s => s.track && s.track.kind === 'video').map(s => ((s.getParameters().encodings || [])[0] || {}).maxBitrate)})), recCanvas: () => rec ? rec.cv.toDataURL('image/jpeg', 0.85) : '', recInfo: () => rec ? {bytes: rec.bytes, n: rec.chunks.length, st: rec.mr.state, stopping: !!rec.stopping, ms: Date.now() - rec.t0, mime: rec.mime} : null, akInfo: () => ({on: !!ak, cur: ak && ak.cur ? Date.now() - ak.cur.t0 : 0, chunks: ak && ak.cur ? [ak.prev ? ak.prev.chunks.length : 0, ak.cur.chunks.length] : null, prev: !!(ak && ak.prev), clip: window.__ak || null, up: window.__akUp || null, url: akClip ? akClip.url : ''})};   // для тестов
+window.__nu = {nn: NN.stat, dbg, decision: () => lastDecision, origin: () => Date.now() - performance.now(), skewMs: CLOCK_SKEW, hostNow: () => clk() + (isHost ? 0 : clkOff), clkInfo: () => ({off: Math.round(clkOff), rtt: Math.round(clkRtt), n: clkSamples.length}), simSmile: tt => reportSmile(snapshot(), 'тест', clk() + (tt - Date.now()), clipMake(performance.now())), duck: reset => { const r = {stat: {...duckStat}, minDb: +duckMin.toFixed(1), gainDb: +duckDb.toFixed(1), myDb: +myDb.toFixed(1), remDb: +remDb.toFixed(1), active: !!duck}; if (reset) duckMin = 0; return r; }, lastLoser: () => lastLoser, scoreImg: async src => { const im = new Image(); im.src = src; await im.decode(); const h = Math.round(DET_W * im.naturalHeight / im.naturalWidth); detCv.width = DET_W; detCv.height = h; detG.drawImage(im, 0, 0, DET_W, h); landmarker.detectForVideo(detCv, performance.now()); const r = landmarker.detectForVideo(detCv, performance.now() + 1), bs = r.faceBlendshapes && r.faceBlendshapes[0]; if (!bs) return null; const b = {}; for (const c of bs.categories) b[c.categoryName] = c.score; return {s: smileOf(b), corners: Math.min(b.mouthSmileLeft || 0, b.mouthSmileRight || 0), laugh: isLaugh(b)}; }, probe: () => { if (!landmarker || loopOn && (phase === 'prep' || phase === 'run' || maskId)) return undefined; const s = detectRaw($('cam')); return s == null ? s : {s, corners, laugh, thr: Math.max(SMILE_MIN, baseline + SMILE_OVER), both: SMILE_BOTH, hold: SMILE_HOLD_MS, base: baseline}; }, smileOf, isLaugh, thr: base => Math.max(SMILE_MIN, base + SMILE_OVER), aud: () => roster.filter(r => r.id !== myId).map(r => audioFlowing(r.id) ? 'rtc' : Date.now() - (pcmLast.get(r.id) || 0) < 3000 ? 'pcm' : 0), get srv(){ return srvUp(); }, get fps(){ return detFps; }, out: () => outCv ? outCv.toDataURL('image/png') : '', mask: id => setMask(id), recDraw: () => { const g = document.createElement('canvas').getContext('2d'); g.canvas.width = g.canvas.height = 200; const ok = recDrawCover(g, $('cam'), 0, 0, 200, 200, true); return [ok, ...g.getImageData(100, 100, 1, 1).data, $('cam').videoWidth, $('cam').currentTime]; }, recDbg: () => { const c = $('cam'), t = document.querySelector('.tile[data-id="me"]'); return {w: c.videoWidth, rs: c.readyState, p: c.paused, disp: getComputedStyle(c).display, rect: recRects.map(r => [r.t.dataset.id, Math.round(r.x), Math.round(r.y), Math.round(r.w), Math.round(r.h)]), px: rec ? [...rec.g.getImageData(100, 100, 1, 1).data] : null, mask: maskId, out: !!outCv}; }, caps: () => [...calls.values()].map(c => ({relay: c.relay, bps: c.peerConnection.getSenders().filter(s => s.track && s.track.kind === 'video').map(s => ((s.getParameters().encodings || [])[0] || {}).maxBitrate)})), recCanvas: () => rec ? rec.cv.toDataURL('image/jpeg', 0.85) : '', recInfo: () => rec ? {bytes: rec.bytes, n: rec.chunks.length, st: rec.mr.state, stopping: !!rec.stopping, ms: Date.now() - rec.t0, mime: rec.mime} : null, akInfo: () => ({on: !!ak, cur: ak && ak.cur ? Date.now() - ak.cur.t0 : 0, chunks: ak && ak.cur ? [ak.prev ? ak.prev.chunks.length : 0, ak.cur.chunks.length] : null, prev: !!(ak && ak.prev), clip: window.__ak || null, up: window.__akUp || null, url: akClip ? akClip.url : ''})};   // для тестов
 const NOMESH = new URLSearchParams(location.search).has('nomesh');   // для теста запасного пути
 const remote = new Map();    // id -> MediaStream, пришедший напрямую
 const relays = new Map();    // гость: id -> звонок-пересылка; создатель: 'гость|id' -> звонок

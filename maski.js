@@ -8,6 +8,8 @@ export const STYLES = {hell: 'Ад', glam: 'Гламур', meme: 'Мемы', ani
 
 // free — бесплатна всегда; vip — золотая рамка, после PAID_FROM открыта только VIP-пользователям (цены и vip держит сервер)
 export const MASKS = [
+  {id: 'baby',     name: 'Бэйби',         style: 'meme', admin: true},   // нейро (maski_nn.js): тест только для админа, в магазин не выставлена
+  {id: 'starik',   name: 'Старик',        style: 'meme', admin: true},
   {id: 'crown',    name: 'Корона',        style: 'hat',   free: true},
   {id: 'wreath',   name: 'Лавр',          style: 'hat'},
   {id: 'hellfire', name: 'Огненная корона', style: 'hell'},
