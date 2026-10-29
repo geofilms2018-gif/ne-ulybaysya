@@ -343,7 +343,7 @@ function field(g, x0, y0, x1, y1, d){
 const sstep = (a, b, v) => { const t = Math.max(0, Math.min(1, (v - a) / (b - a))); return t * t * (3 - 2 * t); };
 
 // уверенность «это человек» в точке кадра (по последней сегментации); нет маски — 1
-function segAt(x, y){ const m = FIT.mask; if (!m) return 1; const {sw, sh, s} = FIT.ms, X = x * s - 0.5, Y = y * s - 0.5, ix = Math.floor(X), iy = Math.floor(Y), fx = X - ix, fy = Y - iy;
+function segAt(x, y){ const m = FIT.mask; if (!m || FIT.cut) return 1; const {sw, sh, s} = FIT.ms, X = x * s - 0.5, Y = y * s - 0.5, ix = Math.floor(X), iy = Math.floor(Y), fx = X - ix, fy = Y - iy;
   const at = (i, j) => i < 0 || j < 0 || i >= sw || j >= sh ? 0 : m[j * sw + i], v = at(ix, iy) * (1 - fx) * (1 - fy) + at(ix + 1, iy) * fx * (1 - fy) + at(ix, iy + 1) * (1 - fx) * fy + at(ix + 1, iy + 1) * fx * fy;
   return sstep(0.15, 0.85, v); }
 // купол головы: лоб от бровей до линии волос тянется вверх ×K и расширяется к макушке (wide), над лбом всё сдвигается целиком; к вискам и выше головы гаснет
@@ -434,8 +434,9 @@ function headFit(g, lm, W, H){
   const up = {x: ux / fh, y: uy / fh}, sd = {x: -up.y, y: up.x}, fw = Math.hypot(P(454).x - P(234).x, P(454).y - P(234).y);
   const at = (x, y) => { const X = Math.round(x), Y = Math.round(y); return X < 1 || Y < 1 || X >= sw - 1 || Y >= sh - 1 ? -1 : m[Y * sw + X]; };
   const tops = [-0.2, -0.1, 0, 0.1, 0.2].map(o => { const x0 = a.x + sd.x * fw * o, y0 = a.y + sd.y * fw * o; let t = 0;
-    for (; t < fh * 1.6; t += 0.5){ const v = at(x0 + up.x * t, y0 + up.y * t); if (v < 0) return fh * 9; if (v < 0.5) break; } return t; });
-  if (tops.some(t => t >= fh * 1.6)) return;   // верх головы за кадром — оставляем как было
+    for (; t < fh * 1.6; t += 0.5){ const v = at(x0 + up.x * t, y0 + up.y * t); if (v < 0) return -t - 0.01; if (v < 0.5) break; } return t; });   // −t: дошли до края кадра на t — макушка выше
+  if (tops.some(t => t >= fh * 1.6)) return;   // верх не найден — оставляем как было
+  const cut = tops.some(t => t < 0); for (let i = 0; i < tops.length; i++) tops[i] = Math.abs(tops[i]); FIT.cut = cut;   // макушка за кадром: край кадра — нижняя оценка верха
   const tm = [...tops].sort((x, y) => x - y)[2], q = {x: a.x + up.x * tm * 0.45, y: a.y + up.y * tm * 0.45}, side = d => { let t = 0; for (; t < fw * 1.5; t += 0.5){ const v = at(q.x + sd.x * d * t, q.y + sd.y * d * t); if (v < 0) return NaN; if (v < 0.5) break; } return t; };
   const wr = (side(1) + side(-1)) / fw, sx = isNaN(wr) ? FIT.sx : Math.max(0.82, Math.min(1.05, wr / W0));
   FIT.r = tm / fh; FIT.w = wr; FIT.sx = FIT.n ? FIT.sx * 0.7 + sx * 0.3 : sx;
@@ -443,7 +444,7 @@ function headFit(g, lm, W, H){
   { const sk = d => { let t = 0; for (; t < fw * 0.75; t += 0.5){ const v = at(q.x + sd.x * d * t, q.y + sd.y * d * t); if (v < 0 || v < 0.5) break; } return t; };   // центр черепа по силуэту, волосы шире висков не в счёт
     FIT.cx = (sk(1) - sk(-1)) / 2 / s; FIT.silL = -tm / fw; }
 }
-export function fitReset(){ FIT.n = 0; FIT.dy = 0; FIT.dx = 0; FIT.sx = 1; FIT.T = null; FIT.mask = null; fitN = 0; }
+export function fitReset(){ FIT.cut = false; FIT.n = 0; FIT.dy = 0; FIT.dx = 0; FIT.sx = 1; FIT.T = null; FIT.mask = null; fitN = 0; }
 // сдвиг шапки по высоте головы: точка касания (верх дуги ободка) в проекции камеры ложится на верх силуэта (минус INSET высоты лица)
 const _q = new THREE.Vector3();
 function fitDy(W, H){
@@ -451,9 +452,9 @@ function fitDy(W, H){
   const P = y => { _q.set(0, HC + (HT - HC) * Math.cos(TILT), -4 + (HT - HC) * Math.sin(TILT) + 0 * y); _q.y += y; _q.applyMatrix4(R.head.matrix).project(R.camera); return {x: (_q.x + 1) / 2 * W, y: (1 - _q.y) / 2 * H}; };
   const p0 = P(0), p1 = P(1), up = FIT.up, along = p => p.x * up.x + p.y * up.y, ppc = along(p1) - along(p0); if (ppc < 0.5) return;
   const gap = (along(FIT.T) - along(p0)) / FIT.fh; FIT.gap = gap;
-  const dy = Math.max(FIT_LO, Math.min(FIT_HI, (gap - INSET) * FIT.fh / ppc));
+  let dy = Math.max(FIT_LO, Math.min(FIT_HI, (gap - INSET) * FIT.fh / ppc)); if (FIT.cut) dy = Math.max(0, dy);   // за кадром — только вверх: маску режет край кадра, вниз не прижимаем
   _q.set(1, HC + (HT - HC) * Math.cos(TILT), -4 + (HT - HC) * Math.sin(TILT)).applyMatrix4(R.head.matrix).project(R.camera); const p1x = {x: (_q.x + 1) / 2 * W, y: (1 - _q.y) / 2 * H}, sd = FIT.sd;
-  const ppx = (p1x.x - p0.x) * sd.x + (p1x.y - p0.y) * sd.y, dx = Math.abs(ppx) > 0.5 ? Math.max(-1.5, Math.min(1.5, -(FIT.cx || 0) / ppx)) : 0;
+  const ppx = (p1x.x - p0.x) * sd.x + (p1x.y - p0.y) * sd.y, dx = Math.abs(ppx) > 0.5 ? Math.max(-1.5, Math.min(1.5, -0.5 * (FIT.cx || 0) / ppx)) : 0;
   FIT.dy = FIT.n ? FIT.dy * 0.7 + dy * 0.3 : dy; FIT.dx = FIT.n ? FIT.dx * 0.7 + dx * 0.3 : dx; FIT.n++;
 }
 export const fitState = FIT;
