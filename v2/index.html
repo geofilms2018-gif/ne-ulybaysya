@@ -98,6 +98,9 @@
   .tile.fbon:not(.live) img.fb{display:block}
   .tile .na{position:absolute;left:10px;top:10px;z-index:2;display:none;font-size:12px;background:#000a;padding:3px 7px;border-radius:9px}
   body.voice .tile.noaud .na{display:block}
+  /* Гео 29.10: в раунде все тапают по экрану — кнопку «заглушить игрока» на чужих плитках прячем, чтобы случайно не выключить друга */
+  body.inround .tile:not([data-id="me"]) .mic{display:none}
+  body.voice .tile.muted .na{display:block}
   .mic{position:absolute;right:8px;bottom:8px;z-index:2;display:none;width:38px;height:38px;padding:0;border-radius:50%;font-size:18px;background:#000a;border:0;color:#fff}
   body.voice .mic{display:block}
   .modes{display:flex;gap:8px;width:100%;max-width:340px}
@@ -349,6 +352,9 @@ function heart(){
 setInterval(() => { if (phase === 'run' && Math.random() < .25) heart(); }, 700);
 // тап по экрану в раунде — летит смешная реакция всем, чтобы рассмешить
 let lastReact = 0;
+// звук игроков: телефон мог не дать включить звук без нажатия (автоплей) — любой тап включает заново
+document.addEventListener('pointerdown', () => { for (const v of document.querySelectorAll('.tile:not([data-id="me"]) video')) if (!v.muted && v.paused && v.srcObject) v.play().catch(() => {}); if (actx && actx.state !== 'running') actx.resume().catch(() => {}); }, {capture: true});
+setInterval(() => document.body.classList.toggle('inround', phase === 'prep' || phase === 'run'), 200);
 document.addEventListener('pointerdown', ev => {
   if (phase !== 'run' || ev.target.closest('button,input')) return;
   const now = performance.now(); if (now - lastReact < 250) return; lastReact = now;
@@ -369,10 +375,12 @@ function code4(){ const a='ABCDEFGHJKLMNPRSTUVWXYZ'; return Array.from({length:4
 
 // iOS открывает звук и камеру только после нажатия — разблокируем звуки на первом тапе
 let actx = null; const bufs = {};
+function setSession(v){ try { const t = v ? 'play-and-record' : 'playback'; if (navigator.audioSession && navigator.audioSession.type !== t) navigator.audioSession.type = t; } catch(e){} }
 function unlockAudio(){
   try {
     // звук и при выключенном звонке; с открытым микрофоном — play-and-record, иначе iOS уводит звук в разговорный динамик
-    if (navigator.audioSession) navigator.audioSession.type = voice ? 'play-and-record' : 'playback';
+    // переключаем аудиосессию iOS только при смене режима: каждое переключение — щелчок и провал звука (Гео 29.10: «лагающие звуки» на фото)
+    setSession(voice);
     if (voice) $('aOut').play().catch(() => {});
     if (!actx) makeActx(micRate());
     if (actx.state !== 'running') actx.resume();
@@ -447,7 +455,7 @@ async function initCam(){
   if (stream && stream.active && stream.getVideoTracks().every(t => t.readyState === 'live')){ $('cam').play().catch(()=>{}); return; }
   // некоторые встроенные браузеры молча не показывают запрос камеры — не висим, а говорим, что делать
   stream = await Promise.race([
-    navigator.mediaDevices.getUserMedia({video:{facingMode:'user', width:{ideal:480}, height:{ideal:360}, frameRate:{ideal:15, max:20}}, audio:false}),
+    navigator.mediaDevices.getUserMedia({video:{facingMode:'user', width:{ideal:480}, height:{ideal:360}, frameRate:{ideal:24, max:30}}, audio:false}),
     new Promise((_, no) => setTimeout(() => no(new Error('Камера не включилась. Нажми «Разрешить», а если запроса нет — открой ссылку в Safari или Chrome')), 15000))
   ]);
   $('cam').srcObject = stream;
@@ -643,7 +651,7 @@ function pub(k, msg, qos){
   seen.add(msg.mid);   // своё эхо не обрабатываем
   const data = JSON.stringify(msg);
   const viaSrv = srvSend(data);
-  if (k === 'x' && viaSrv) return;   // кадры и голос идут только через сервер
+  if ((k === 'x' || data.length > 200000) && viaSrv) return;   // кадры, голос и клипы повтора (до ~0,6 МБ) — только через сервер: публичные брокеры большое не берут
   for (const c of clients) try { c.publish(topic(k), data, {qos: qos === 0 ? 0 : 1}); } catch(e){}
 }
 function toHost(msg){ pub('h', msg); }
@@ -700,6 +708,7 @@ function hostNet(m){
   if (m.type === 'react') broadcast({type:'react', e: String(m.e).slice(0, 4), by: id});
   if (m.type === 'rec') broadcast({type:'rec', on: !!m.on, by: p.name, id});
   if (m.type === 'smile') hostGotSmile(id, p.name, m.photo, m.at, m.why, m.clip);
+  if (m.type === 'clip') hostGotClip(id, m.clip);
   if (m.type === 'relay') hostRelay(id, String(m.of));
   if (m.type === 'cp' && typeof m.t0 === 'number') pub('all', {type:'cr', to: id, t0: m.t0, th: clk()});
   if (m.type === 'vid' && !p.v){ p.v = true; sendLobby(); }
@@ -864,7 +873,10 @@ function outStream(){   // что отправляем в звонки: каме
 // ---------- против эха: «утка» на исходящем голосе ----------
 // Пока громко играет чужой голос, а мой микрофон не громче его, мой голос глушим на 26 дБ:
 // это добивает эхо, которое не убрал системный эхоподавитель (свой голос из чужих колонок обратно в их микрофон).
-const DUCK_DB = -26, DUCK_OVER = 3, VOICE_VOL = 0.8;
+// Гео 29.10 (втроём «не слышали друг друга», «лагающие звуки»): было «глушить, если я тише чужого +3 дБ» и 300 мс хвоста —
+// глушило живую речь внахлёст и резало следующий слог после паузы, разговор становился рацией. Тест e2e_golos3.py (внахлёст: 13–14% → 41–43%).
+// Эхо из колонок в микрофоне заметно тише оригинала — глушим, только если мой микрофон тише чужого на 14 дБ; заговорил громче — отпускаем сразу.
+const DUCK_DB = -26, DUCK_OVER = -14, VOICE_VOL = 0.8;
 let duck = null;   // {mic, src, an, buf} — уровень моего голоса (по копии трека, живой поток не трогаем)
 let ducked = false, duckOffAt = 0;
 const remAn = new Map(), pcmLvl = new Map();
@@ -888,7 +900,7 @@ function sendTrack(){
   return sendTr;
 }
 function dropSend(){ if (sendTr) try { sendTr.stop(); } catch(e){} sendTr = sendOf = null; if (duck){ try { duck.src.disconnect(); } catch(e){} for (const t of duck.cl) try { t.stop(); } catch(e){} duck = null; } }
-let duckDb = 0, duckMin = 0, myDb = -120, remDb = -120;
+let duckDb = 0, duckMin = 0, myDb = -120, remDb = -120; const duckStat = {talk: 0, cut: 0};   // сколько раз (по 25 мс) я говорил и сколько из них был заглушён — для тестов
 setInterval(() => {
   if (!voice || !duck || !actx) return;
   myDb = micOn ? rmsDb(duck.an, duck.buf) : -120;
@@ -903,13 +915,15 @@ setInterval(() => {
   for (const [id, l] of pcmLvl) if (Date.now() - l.t < 300) remDb = Math.max(remDb, l.db);
   const on = remDb > -50 && myDb < remDb + DUCK_OVER, now = Date.now();
   // включается сразу (≤25 мс), отпускает через 300 мс тишины чужого голоса
-  if (on){ ducked = true; duckOffAt = now + 300; } else if (ducked && now > duckOffAt) ducked = false;
+  if (on){ ducked = true; duckOffAt = now + 300; } else if (ducked && (now > duckOffAt || myDb > remDb + DUCK_OVER + 4)) ducked = false;
   if (sendTr) sendTr.enabled = micOn && !ducked;
+  if (micOn && myDb > -45){ duckStat.talk++; if (ducked) duckStat.cut++; }
   duckDb = ducked ? DUCK_DB : 0; duckMin = Math.min(duckMin, duckDb);
 }, 25);
 function applyAudio(t){
   const v = t.querySelector('video'), b = t.querySelector('.mic');
   v.muted = GHOST || !voice || !!t.dataset.mute; v.volume = VOICE_VOL;
+  t.classList.toggle('muted', !!t.dataset.mute); const na = t.querySelector('.na'); if (na) na.textContent = t.dataset.mute ? '🔇 выключен тобой' : '🔇 нет звука';
   if (!v.muted) v.play().catch(() => {});
   b.textContent = t.dataset.mute ? '🔇' : '🔊';
 }
@@ -933,7 +947,7 @@ async function setVoice(on, retry){
   voice = on; document.body.classList.toggle('voice', on);
   $('modeHint').textContent = on ? 'Режим: 🌍 дистанционно — голосовая связь' : 'Режим: 🤝 рядом — без голоса';
   $('mNear').classList.toggle('on', !on); $('mFar').classList.toggle('on', on);
-  try { if (navigator.audioSession) navigator.audioSession.type = on ? 'play-and-record' : 'playback'; } catch(e){}
+  setSession(on);
   if (on && (!mic || retry)){
     // пока микрофон открывается, не отвечаем и не звоним — иначе звонок уйдёт без голоса
     if (mic) for (const tr of mic.getTracks()) tr.stop();
@@ -1046,7 +1060,7 @@ setInterval(fallbackTick, RL_MS);
 // ---------- видео всех игроков (как FaceTime) ----------
 // Сначала каждый звонит каждому напрямую. Если гость↔гость не соединились за 3 с (сотовый NAT),
 // гость просит создателя переслать ему видео этого игрока: с создателем связь есть у всех.
-window.__nu = {dbg, decision: () => lastDecision, origin: () => Date.now() - performance.now(), skewMs: CLOCK_SKEW, hostNow: () => clk() + (isHost ? 0 : clkOff), clkInfo: () => ({off: Math.round(clkOff), rtt: Math.round(clkRtt), n: clkSamples.length}), simSmile: tt => reportSmile(snapshot(), 'тест', clk() + (tt - Date.now())), duck: reset => { const r = {minDb: +duckMin.toFixed(1), gainDb: +duckDb.toFixed(1), myDb: +myDb.toFixed(1), remDb: +remDb.toFixed(1), active: !!duck}; if (reset) duckMin = 0; return r; }, lastLoser: () => lastLoser, scoreImg: async src => { const im = new Image(); im.src = src; await im.decode(); const h = Math.round(DET_W * im.naturalHeight / im.naturalWidth); detCv.width = DET_W; detCv.height = h; detG.drawImage(im, 0, 0, DET_W, h); landmarker.detectForVideo(detCv, performance.now()); const r = landmarker.detectForVideo(detCv, performance.now() + 1), bs = r.faceBlendshapes && r.faceBlendshapes[0]; if (!bs) return null; const b = {}; for (const c of bs.categories) b[c.categoryName] = c.score; return {s: smileOf(b), corners: Math.min(b.mouthSmileLeft || 0, b.mouthSmileRight || 0), laugh: isLaugh(b)}; }, probe: () => { if (!landmarker || loopOn && (phase === 'prep' || phase === 'run' || maskId)) return undefined; const s = detectRaw($('cam')); return s == null ? s : {s, corners, laugh, thr: Math.max(SMILE_MIN, baseline + SMILE_OVER), both: SMILE_BOTH, hold: SMILE_HOLD_MS, base: baseline}; }, smileOf, isLaugh, thr: base => Math.max(SMILE_MIN, base + SMILE_OVER), aud: () => roster.filter(r => r.id !== myId).map(r => audioFlowing(r.id) ? 'rtc' : Date.now() - (pcmLast.get(r.id) || 0) < 3000 ? 'pcm' : 0), get srv(){ return srvUp(); }, get fps(){ return detFps; }, out: () => outCv ? outCv.toDataURL('image/png') : '', mask: id => setMask(id), recDraw: () => { const g = document.createElement('canvas').getContext('2d'); g.canvas.width = g.canvas.height = 200; const ok = recDrawCover(g, $('cam'), 0, 0, 200, 200, true); return [ok, ...g.getImageData(100, 100, 1, 1).data, $('cam').videoWidth, $('cam').currentTime]; }, recDbg: () => { const c = $('cam'), t = document.querySelector('.tile[data-id="me"]'); return {w: c.videoWidth, rs: c.readyState, p: c.paused, disp: getComputedStyle(c).display, rect: recRects.map(r => [r.t.dataset.id, Math.round(r.x), Math.round(r.y), Math.round(r.w), Math.round(r.h)]), px: rec ? [...rec.g.getImageData(100, 100, 1, 1).data] : null, mask: maskId, out: !!outCv}; }, caps: () => [...calls.values()].map(c => ({relay: c.relay, bps: c.peerConnection.getSenders().filter(s => s.track && s.track.kind === 'video').map(s => ((s.getParameters().encodings || [])[0] || {}).maxBitrate)})), recCanvas: () => rec ? rec.cv.toDataURL('image/jpeg', 0.85) : '', recInfo: () => rec ? {bytes: rec.bytes, n: rec.chunks.length, st: rec.mr.state, stopping: !!rec.stopping, ms: Date.now() - rec.t0, mime: rec.mime} : null};   // для тестов
+window.__nu = {dbg, decision: () => lastDecision, origin: () => Date.now() - performance.now(), skewMs: CLOCK_SKEW, hostNow: () => clk() + (isHost ? 0 : clkOff), clkInfo: () => ({off: Math.round(clkOff), rtt: Math.round(clkRtt), n: clkSamples.length}), simSmile: tt => reportSmile(snapshot(), 'тест', clk() + (tt - Date.now()), clipMake(performance.now())), duck: reset => { const r = {stat: {...duckStat}, minDb: +duckMin.toFixed(1), gainDb: +duckDb.toFixed(1), myDb: +myDb.toFixed(1), remDb: +remDb.toFixed(1), active: !!duck}; if (reset) duckMin = 0; return r; }, lastLoser: () => lastLoser, scoreImg: async src => { const im = new Image(); im.src = src; await im.decode(); const h = Math.round(DET_W * im.naturalHeight / im.naturalWidth); detCv.width = DET_W; detCv.height = h; detG.drawImage(im, 0, 0, DET_W, h); landmarker.detectForVideo(detCv, performance.now()); const r = landmarker.detectForVideo(detCv, performance.now() + 1), bs = r.faceBlendshapes && r.faceBlendshapes[0]; if (!bs) return null; const b = {}; for (const c of bs.categories) b[c.categoryName] = c.score; return {s: smileOf(b), corners: Math.min(b.mouthSmileLeft || 0, b.mouthSmileRight || 0), laugh: isLaugh(b)}; }, probe: () => { if (!landmarker || loopOn && (phase === 'prep' || phase === 'run' || maskId)) return undefined; const s = detectRaw($('cam')); return s == null ? s : {s, corners, laugh, thr: Math.max(SMILE_MIN, baseline + SMILE_OVER), both: SMILE_BOTH, hold: SMILE_HOLD_MS, base: baseline}; }, smileOf, isLaugh, thr: base => Math.max(SMILE_MIN, base + SMILE_OVER), aud: () => roster.filter(r => r.id !== myId).map(r => audioFlowing(r.id) ? 'rtc' : Date.now() - (pcmLast.get(r.id) || 0) < 3000 ? 'pcm' : 0), get srv(){ return srvUp(); }, get fps(){ return detFps; }, out: () => outCv ? outCv.toDataURL('image/png') : '', mask: id => setMask(id), recDraw: () => { const g = document.createElement('canvas').getContext('2d'); g.canvas.width = g.canvas.height = 200; const ok = recDrawCover(g, $('cam'), 0, 0, 200, 200, true); return [ok, ...g.getImageData(100, 100, 1, 1).data, $('cam').videoWidth, $('cam').currentTime]; }, recDbg: () => { const c = $('cam'), t = document.querySelector('.tile[data-id="me"]'); return {w: c.videoWidth, rs: c.readyState, p: c.paused, disp: getComputedStyle(c).display, rect: recRects.map(r => [r.t.dataset.id, Math.round(r.x), Math.round(r.y), Math.round(r.w), Math.round(r.h)]), px: rec ? [...rec.g.getImageData(100, 100, 1, 1).data] : null, mask: maskId, out: !!outCv}; }, caps: () => [...calls.values()].map(c => ({relay: c.relay, bps: c.peerConnection.getSenders().filter(s => s.track && s.track.kind === 'video').map(s => ((s.getParameters().encodings || [])[0] || {}).maxBitrate)})), recCanvas: () => rec ? rec.cv.toDataURL('image/jpeg', 0.85) : '', recInfo: () => rec ? {bytes: rec.bytes, n: rec.chunks.length, st: rec.mr.state, stopping: !!rec.stopping, ms: Date.now() - rec.t0, mime: rec.mime} : null};   // для тестов
 const NOMESH = new URLSearchParams(location.search).has('nomesh');   // для теста запасного пути
 const remote = new Map();    // id -> MediaStream, пришедший напрямую
 const relays = new Map();    // гость: id -> звонок-пересылка; создатель: 'гость|id' -> звонок
@@ -1244,16 +1258,18 @@ function syncCalls(){
 function reportSmile(photo, why, onset, clip){
   const at = (onset == null ? clk() : onset) + (isHost ? 0 : clkOff);
   if (isHost) hostGotSmile(myId, myName, photo, at, why, clip);
-  else toHost({type:'smile', photo, at, why, clip});
+  // клип (до ~0,5 МБ) — отдельным сообщением следом: большой кусок не задерживает саму улыбку (кто первый — по времени прихода в окно)
+  else { toHost({type:'smile', photo, at, why}); if (clip && clip.length) setTimeout(() => toHost({type:'clip', clip}), 30); }
 }
-// ---------- повтор улыбки: камера последние 3 с кольцом (8 к/с, 200 px, без кодирования на лету);
-// при улыбке — клип 2 с ДО неё (последний кадр — уже улыбка), у всех он проигрывается и замирает стоп-кадром ----------
-const CLIP_FPS = 8, CLIP_W = 200, CLIP_N = 24, CLIP_MS = 2000;
-let clipRing = [], clipAt = 0;
+// ---------- повтор улыбки: камера последние 2 с кольцом (24 к/с, 240 px, без кодирования на лету);
+// при улыбке — клип 2 с ДО неё (последний кадр — уже улыбка), у всех он проигрывается и замирает стоп-кадром
+// Гео 29.10: было 8 к/с — «рвано, как будто очень мало FPS»; теперь 24 к/с (камера тоже 24), клип идёт через наш сервер (до 1 МБ) ----------
+const CLIP_FPS = 24, CLIP_W = 240, CLIP_N = 50, CLIP_MS = 2000;
+let clipRing = [], clipAt = 0, clipVT = -1;
 function clipGrab(now){
   if (now - clipAt < 1000 / CLIP_FPS - 8) return;
-  const v = $('cam'); if (!v.videoWidth) return;
-  clipAt = now;
+  const v = $('cam'); if (!v.videoWidth || v.currentTime === clipVT) return;   // новый кадр камеры — без повторов
+  clipAt = now; clipVT = v.currentTime;
   const c = clipRing.length >= CLIP_N ? clipRing.shift().c : document.createElement('canvas'), h = Math.round(CLIP_W * v.videoHeight / v.videoWidth);
   if (c.width !== CLIP_W || c.height !== h){ c.width = CLIP_W; c.height = h; }
   const g = c.getContext('2d'); g.setTransform(-1, 0, 0, 1, CLIP_W, 0); g.drawImage(v, 0, 0, CLIP_W, h);   // зеркально, как фото
@@ -1261,10 +1277,10 @@ function clipGrab(now){
 }
 function clipMake(end){
   const fr = clipRing.filter(f => f.t >= end - CLIP_MS && f.t <= end + 1).map(f => f.c.toDataURL('image/jpeg', 0.6));
-  let n = 0; while (fr.length && fr.join('').length > 160000 && n++ < 8) fr.splice(0, 2);   // запасной путь (MQTT) — не больше ~160 КБ
+  let n = 0; while (fr.length && fr.join('').length > 600000 && n++ < 20) fr.splice(0, 2);   // не больше ~600 КБ — с запасом до лимита сервера 1 МБ
   return fr;
 }
-function okClip(c){ return Array.isArray(c) && c.length <= CLIP_N && c.every(x => typeof x === 'string' && x.startsWith('data:image/jpeg')) && c.join('').length < 200000 ? c : null; }
+function okClip(c){ return Array.isArray(c) && c.length <= CLIP_N && c.every(x => typeof x === 'string' && x.startsWith('data:image/jpeg')) && c.join('').length < 800000 ? c : null; }
 let replayT = 0;
 function playReplay(m){
   clearInterval(replayT);
@@ -1273,16 +1289,24 @@ function playReplay(m){
   if (fr.length < 4){ img.src = m.photo; tag.style.display = 'none'; return; }
   tag.style.display = ''; tag.textContent = '⏪ ПОВТОР'; img.src = fr[0];
   let i = 0;
+  const pre = fr.map(u => { const im = new Image(); im.src = u; return im; });   // кадры раскодированы заранее — смена без рывков
+  window.__replay.pre = pre.length;
   replayT = setInterval(() => {
     if (++i < fr.length){ img.src = fr[i]; window.__replay.i = i; return; }
     clearInterval(replayT); img.src = m.photo || fr[fr.length - 1]; void img.offsetWidth; img.classList.add('freeze');
     tag.textContent = '📸 СТОП-КАДР'; window.__replay.done = true;
-  }, 1000 / CLIP_FPS);
+  }, CLIP_MS / fr.length);   // в реальном времени: клип — это последние 2 с, сколько бы кадров камера ни дала
 }
 
 // ---------- интрига: после первой улыбки ещё TIE_WINDOW_MS принимаем улыбки остальных; проигрывает тот, кто раньше по общей шкале ----------
 const TIE_WINDOW_MS = 1000;
-let hostStart = 0, loserTaken = false, cands = [], lastDecision = [];
+let hostStart = 0, loserTaken = false, cands = [], lastDecision = [], loserId = '';
+// клип улыбки пришёл отдельно: до решения — в кандидата, после — всем, если это проигравший
+function hostGotClip(id, clip){
+  const c = cands.find(x => x.id === id), ok = okClip(clip); if (!c || !ok) return;
+  c.clip = ok;
+  if (loserTaken && loserId === id) broadcast({type:'lclip', id, clip: ok});
+}
 function hostGotSmile(id, name, photo, at, why, clip){
   if (randomMode){ randSmile(id, name, photo, at, why); return; }
   if (loserTaken || phase !== 'run') return;
@@ -1297,7 +1321,8 @@ function hostGotSmile(id, name, photo, at, why, clip){
     const all = cands.slice().sort((a, b) => a.at - b.at), first = all[0]; lastDecision = all.map(c => ({n: c.name, at: Math.round(c.at - first.at)}));   // разница меньше погрешности — всё равно побеждает меньшее время
     const p = players.get(first.id); if (p) p.loss = (p.loss || 0) + 1;
     const intrigue = all.length > 1 ? all.map(c => ({id: c.id, name: c.name, photo: c.photo, dt: Math.round(c.at - first.at)})) : null;
-    broadcast({type:'loser', name: first.name, photo: first.photo, clip: first.clip || null, ms: Math.max(1, first.at - hostStart), why: first.why, intrigue});
+    loserId = first.id;
+    broadcast({type:'loser', id: first.id, name: first.name, photo: first.photo, clip: first.clip || null, ms: Math.max(1, first.at - hostStart), why: first.why, intrigue});
     sendLobby();
   }, TIE_WINDOW_MS);
 }
@@ -1328,6 +1353,7 @@ function handle(msg){
   if (msg.type === 'react') flyEmoji(msg.e);
   if (msg.type === 'feed') feed(msg.name, msg.text);
   if (msg.type === 'loser') showLoser(msg);
+  if (msg.type === 'lclip' && curLoser && curLoser.id === msg.id && okClip(msg.clip)){ curLoser.clip = msg.clip; if (curLoser.shown && !(window.__replay && window.__replay.n >= 4)) playReplay(curLoser); }
   if (msg.type === 'rec') recIndicator(msg);
   if (msg.type === 'rout') randOut(msg);
   if (msg.type === 'rfinal') randFinal(msg);
@@ -1363,6 +1389,7 @@ function startRound(){
 // итог: обычный — отсчёт 5…1 и показ; интрига (две и больше улыбок рядом) — стоп-кадры, «Оба улыбнулись», 3-2-1, «кто первый»
 const WORDS = {2: 'Оба улыбнулись', 3: 'Трое улыбнулись', 4: 'Четверо улыбнулись'};
 function revealLoser(m){
+  m.shown = true;
   $('cd').style.display = 'none'; $('cd').classList.remove('shake'); $('intr').style.display = 'none';
   $('loserName').textContent = m.name;
   playReplay(m);
@@ -1373,20 +1400,18 @@ function revealLoser(m){
   $('btnShare').style.display = (m.photo && navigator.canShare) ? 'block' : 'none';
   lastLoser = m;
   $('againHint').textContent = isHost ? '' : 'Ждём, пока создатель комнаты нажмёт «Ещё раз»';
-  play('rev');
+  if (!m.intrigue || m.intrigue.length < 2) play('rev');   // в интриге звук уже был — один раз
 }
+// Гео 29.10: «двое улыбнулись — звук два раза, лагает, не поэтапно». Теперь одна последовательность и один звук:
+// общий экран «Оба улыбнулись» со стоп-кадрами → кто первый (+доли секунды, звук) → карточка проигравшего с повтором (без второго звука)
 function showIntrigue(m){
   const list = m.intrigue.slice(0, 4), n = list.length, el = $('intr');
   el.style.display = 'flex'; $('intrNum').textContent = ''; $('intrNum').className = '';
   $('intrTitle').textContent = (WORDS[n] || 'Улыбнулись все') + ' 😏'; $('intrTitle').className = ''; void $('intrTitle').offsetWidth; $('intrTitle').className = 'in';
   $('intrRow').innerHTML = list.map((p, i) => '<div class="it" data-i="' + i + '" style="animation-delay:' + (0.25 + i * 0.15) + 's"><div class="ip"><img alt="" src="' + (p.photo || '') + '"></div><b>' + esc(p.name) + '</b><small></small></div>').join('');
-  const T = ms => new Promise(r => setTimeout(r, ms));
+  const T = ms => new Promise(r => setTimeout(r, ms)), seq = ++loserSeq;
   (async () => {
-    await T(2200);
-    $('intrTitle').textContent = 'Кто был первым?'; $('intrTitle').className = ''; void $('intrTitle').offsetWidth; $('intrTitle').className = 'in';
-    play('dun', 2);
-    for (const k of [3, 2, 1]){ $('intrNum').textContent = k; $('intrNum').className = ''; void $('intrNum').offsetWidth; $('intrNum').className = 'pop'; await T(1000); }
-    $('intrNum').textContent = '';
+    await T(2000); if (seq !== loserSeq) return;
     const tiles = [...document.querySelectorAll('#intrRow .it')];
     tiles.forEach((t, i) => {
       const d = list[i].dt;
@@ -1395,11 +1420,16 @@ function showIntrigue(m){
     });
     $('intrTitle').textContent = '⚡ ' + list[0].name + ' — первый(-ая)'; $('intrTitle').className = ''; void $('intrTitle').offsetWidth; $('intrTitle').className = 'in';
     play('rev');
-    await T(2400);
+    await T(2600); if (seq !== loserSeq) return;
     revealLoser(m);
   })();
 }
+let curLoser = null, loserSeq = 0;
 function showLoser(m){
+  // тот же итог второй раз (дубль сообщения, повторная отправка при переподключении) — не начинаем показ заново
+  const key = (m.id || m.name) + '|' + m.ms;
+  if (phase === 'done' && curLoser && curLoser.key === key) return;
+  m.key = key; curLoser = m; loserSeq++;
   phase = 'done'; if (rec) setTimeout(recStop, 10000);   // запись захватывает отсчёт и показ проигравшего, потом сама останавливается
   show('res');
   $('reveal').style.display = 'none'; $('intr').style.display = 'none';
