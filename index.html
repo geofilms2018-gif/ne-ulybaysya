@@ -163,6 +163,12 @@
   @keyframes numpop{0%{transform:scale(2.4);opacity:0}30%{transform:scale(1);opacity:1}100%{transform:scale(.85);opacity:.9}}
   #cd{font-size:210px;font-weight:900;background:var(--ig);-webkit-background-clip:text;background-clip:text;color:transparent}
   #reveal{display:none;flex-direction:column;align-items:center;gap:12px}
+  #akBox{display:none;align-items:center;gap:12px;background:#ffffff12;border-radius:16px;padding:8px 10px 8px 8px}
+  #akVid{position:static;inset:auto;transform:none;width:72px;height:128px;object-fit:cover;border-radius:10px;background:#000}
+  #akBox .akc{display:flex;flex-direction:column;gap:6px;align-items:stretch}
+  #akBox .akc b{font:800 14px system-ui}
+  #akBox button{padding:8px 12px;font-size:14px;margin:0}
+  #akMsg{font-size:12px;color:#aaa;max-width:170px}
   .phring{padding:5px;border-radius:28px;background:var(--ig);transform:rotate(-3deg);animation:pop .5s;box-shadow:0 20px 60px #d6297666}
   .phring img{display:block;width:74vw;max-width:340px;border-radius:24px;border:4px solid #000}
   .phring{position:relative}
@@ -265,6 +271,7 @@
     <div id="loserName"></div>
     <div class="phring"><img id="loserImg" alt=""><span id="replayTag" style="display:none"></span></div>
     <div class="tag" id="loserTime"></div>
+    <div id="akBox"><video id="akVid" playsinline muted></video><div class="akc"><b>🎬 Последние 15 с</b><button class="sec" id="akSave">💾 Сохранить</button><button class="sec" id="akSend">✈️ В Телеграм</button><small id="akMsg"></small></div></div>
     <button class="sec" id="btnShare" style="display:none">Поделиться фоткой</button>
     <button class="grad" id="btnAgain" style="display:none">Ещё раз</button>
     <button class="sec" id="btnReport" style="display:none">🚩 Пожаловаться на игрока</button>
@@ -398,11 +405,11 @@ function baseOut(){
   $('aOut').play().catch(() => {});
   return msDest;
 }
-let recDest = null, recTap = null;   // запись раунда: звуки игры и голос из PCM идут и в динамик, и в запись
+let recDest = null, recTap = null, akDest = null;   // запись раунда и автоклип: звуки игры и голос из PCM идут и в динамик, и в запись
 function outNode(){
   const n = baseOut();
-  if (!recDest) return n;
-  if (!recTap){ recTap = actx.createGain(); recTap.connect(n); recTap.connect(recDest); }
+  if (!recDest && !akDest) return n;
+  if (!recTap){ recTap = actx.createGain(); recTap.connect(n); for (const d of [recDest, akDest]) if (d) recTap.connect(d); }
   return recTap;
 }
 function play(k, from){
@@ -1021,7 +1028,7 @@ setInterval(fallbackTick, RL_MS);
 // ---------- видео всех игроков (как FaceTime) ----------
 // Сначала каждый звонит каждому напрямую. Если гость↔гость не соединились за 3 с (сотовый NAT),
 // гость просит создателя переслать ему видео этого игрока: с создателем связь есть у всех.
-window.__nu = {dbg, decision: () => lastDecision, origin: () => Date.now() - performance.now(), skewMs: CLOCK_SKEW, hostNow: () => clk() + (isHost ? 0 : clkOff), clkInfo: () => ({off: Math.round(clkOff), rtt: Math.round(clkRtt), n: clkSamples.length}), simSmile: tt => reportSmile(snapshot(), 'тест', clk() + (tt - Date.now())), duck: reset => { const r = {minDb: +duckMin.toFixed(1), gainDb: +duckDb.toFixed(1), myDb: +myDb.toFixed(1), remDb: +remDb.toFixed(1), active: !!duck}; if (reset) duckMin = 0; return r; }, lastLoser: () => lastLoser, scoreImg: async src => { const im = new Image(); im.src = src; await im.decode(); const h = Math.round(DET_W * im.naturalHeight / im.naturalWidth); detCv.width = DET_W; detCv.height = h; detG.drawImage(im, 0, 0, DET_W, h); landmarker.detectForVideo(detCv, performance.now()); const r = landmarker.detectForVideo(detCv, performance.now() + 1), bs = r.faceBlendshapes && r.faceBlendshapes[0]; if (!bs) return null; const b = {}; for (const c of bs.categories) b[c.categoryName] = c.score; return {s: smileOf(b), corners: Math.min(b.mouthSmileLeft || 0, b.mouthSmileRight || 0), laugh: isLaugh(b)}; }, probe: () => { if (!landmarker || loopOn && (phase === 'prep' || phase === 'run' || maskId)) return undefined; const s = detectRaw($('cam')); return s == null ? s : {s, corners, laugh, thr: Math.max(SMILE_MIN, baseline + SMILE_OVER), both: SMILE_BOTH, hold: SMILE_HOLD_MS, base: baseline}; }, smileOf, isLaugh, thr: base => Math.max(SMILE_MIN, base + SMILE_OVER), aud: () => roster.filter(r => r.id !== myId).map(r => audioFlowing(r.id) ? 'rtc' : Date.now() - (pcmLast.get(r.id) || 0) < 3000 ? 'pcm' : 0), get srv(){ return srvUp(); }, get fps(){ return detFps; }, out: () => outCv ? outCv.toDataURL('image/png') : '', mask: id => setMask(id), recDraw: () => { const g = document.createElement('canvas').getContext('2d'); g.canvas.width = g.canvas.height = 200; const ok = recDrawCover(g, $('cam'), 0, 0, 200, 200, true); return [ok, ...g.getImageData(100, 100, 1, 1).data, $('cam').videoWidth, $('cam').currentTime]; }, recDbg: () => { const c = $('cam'), t = document.querySelector('.tile[data-id="me"]'); return {w: c.videoWidth, rs: c.readyState, p: c.paused, disp: getComputedStyle(c).display, rect: recRects.map(r => [r.t.dataset.id, Math.round(r.x), Math.round(r.y), Math.round(r.w), Math.round(r.h)]), px: rec ? [...rec.g.getImageData(100, 100, 1, 1).data] : null, mask: maskId, out: !!outCv}; }, caps: () => [...calls.values()].map(c => ({relay: c.relay, bps: c.peerConnection.getSenders().filter(s => s.track && s.track.kind === 'video').map(s => ((s.getParameters().encodings || [])[0] || {}).maxBitrate)})), recCanvas: () => rec ? rec.cv.toDataURL('image/jpeg', 0.85) : '', recInfo: () => rec ? {bytes: rec.bytes, n: rec.chunks.length, st: rec.mr.state, stopping: !!rec.stopping, ms: Date.now() - rec.t0, mime: rec.mime} : null};   // для тестов
+window.__nu = {dbg, decision: () => lastDecision, origin: () => Date.now() - performance.now(), skewMs: CLOCK_SKEW, hostNow: () => clk() + (isHost ? 0 : clkOff), clkInfo: () => ({off: Math.round(clkOff), rtt: Math.round(clkRtt), n: clkSamples.length}), simSmile: tt => reportSmile(snapshot(), 'тест', clk() + (tt - Date.now())), duck: reset => { const r = {minDb: +duckMin.toFixed(1), gainDb: +duckDb.toFixed(1), myDb: +myDb.toFixed(1), remDb: +remDb.toFixed(1), active: !!duck}; if (reset) duckMin = 0; return r; }, lastLoser: () => lastLoser, scoreImg: async src => { const im = new Image(); im.src = src; await im.decode(); const h = Math.round(DET_W * im.naturalHeight / im.naturalWidth); detCv.width = DET_W; detCv.height = h; detG.drawImage(im, 0, 0, DET_W, h); landmarker.detectForVideo(detCv, performance.now()); const r = landmarker.detectForVideo(detCv, performance.now() + 1), bs = r.faceBlendshapes && r.faceBlendshapes[0]; if (!bs) return null; const b = {}; for (const c of bs.categories) b[c.categoryName] = c.score; return {s: smileOf(b), corners: Math.min(b.mouthSmileLeft || 0, b.mouthSmileRight || 0), laugh: isLaugh(b)}; }, probe: () => { if (!landmarker || loopOn && (phase === 'prep' || phase === 'run' || maskId)) return undefined; const s = detectRaw($('cam')); return s == null ? s : {s, corners, laugh, thr: Math.max(SMILE_MIN, baseline + SMILE_OVER), both: SMILE_BOTH, hold: SMILE_HOLD_MS, base: baseline}; }, smileOf, isLaugh, thr: base => Math.max(SMILE_MIN, base + SMILE_OVER), aud: () => roster.filter(r => r.id !== myId).map(r => audioFlowing(r.id) ? 'rtc' : Date.now() - (pcmLast.get(r.id) || 0) < 3000 ? 'pcm' : 0), get srv(){ return srvUp(); }, get fps(){ return detFps; }, out: () => outCv ? outCv.toDataURL('image/png') : '', mask: id => setMask(id), recDraw: () => { const g = document.createElement('canvas').getContext('2d'); g.canvas.width = g.canvas.height = 200; const ok = recDrawCover(g, $('cam'), 0, 0, 200, 200, true); return [ok, ...g.getImageData(100, 100, 1, 1).data, $('cam').videoWidth, $('cam').currentTime]; }, recDbg: () => { const c = $('cam'), t = document.querySelector('.tile[data-id="me"]'); return {w: c.videoWidth, rs: c.readyState, p: c.paused, disp: getComputedStyle(c).display, rect: recRects.map(r => [r.t.dataset.id, Math.round(r.x), Math.round(r.y), Math.round(r.w), Math.round(r.h)]), px: rec ? [...rec.g.getImageData(100, 100, 1, 1).data] : null, mask: maskId, out: !!outCv}; }, caps: () => [...calls.values()].map(c => ({relay: c.relay, bps: c.peerConnection.getSenders().filter(s => s.track && s.track.kind === 'video').map(s => ((s.getParameters().encodings || [])[0] || {}).maxBitrate)})), recCanvas: () => rec ? rec.cv.toDataURL('image/jpeg', 0.85) : '', akInfo: () => ({on: !!ak, cur: ak && ak.cur ? Date.now() - ak.cur.t0 : 0, chunks: ak && ak.cur ? [ak.prev ? ak.prev.chunks.length : 0, ak.cur.chunks.length] : null, prev: !!(ak && ak.prev), clip: window.__ak || null, up: window.__akUp || null, url: akClip ? akClip.url : ''}), recInfo: () => rec ? {bytes: rec.bytes, n: rec.chunks.length, st: rec.mr.state, stopping: !!rec.stopping, ms: Date.now() - rec.t0, mime: rec.mime} : null};   // для тестов
 const NOMESH = new URLSearchParams(location.search).has('nomesh');   // для теста запасного пути
 const remote = new Map();    // id -> MediaStream, пришедший напрямую
 const relays = new Map();    // гость: id -> звонок-пересылка; создатель: 'гость|id' -> звонок
@@ -1306,13 +1313,14 @@ function handle(msg){
   if (msg.type === 'rec') recIndicator(msg);
   if (msg.type === 'rout') randOut(msg);
   if (msg.type === 'rfinal') randFinal(msg);
-  if (msg.type === 'reset'){ phase = 'idle'; $('pv').play().catch(()=>{}); show('game'); $('clock').textContent = '0:00.0'; $('status').textContent = 'Готов. Ждём старт'; if (isHost) showHostLobby(); else show('lobby'); }
+  if (msg.type === 'reset'){ akDrop(); akHide(); phase = 'idle'; $('pv').play().catch(()=>{}); show('game'); $('clock').textContent = '0:00.0'; $('status').textContent = 'Готов. Ждём старт'; if (isHost) showHostLobby(); else show('lobby'); }
 }
 
 function startRound(){
   show('game');
   initCam().catch(() => {});
   phase = 'prep'; sentSmile = false; smileSince = 0; smileFrames = 0; sBuf = [];
+  akDrop(); akHide(); akStart();
   iAmOut = false; outSet.clear(); outAt.clear(); for (const t of document.querySelectorAll('.tile.out')) t.classList.remove('out');
   for (const v of document.querySelectorAll('#grid video')) v.play().catch(() => {});
   const pa = $('prepAv'); pa.className = roster.length > 4 ? 'many' : '';
@@ -1343,7 +1351,7 @@ function revealLoser(m){
   playReplay(m);
   $('loserWhy').textContent = '😂 ' + (m.why || 'первым(-ой) улыбнулся(-ась)');
   $('loserTime').textContent = 'продержался(-ась) ' + fmt(m.ms);
-  $('reveal').style.display = 'flex';
+  $('reveal').style.display = 'flex'; akShow();
   $('btnAgain').style.display = isHost ? 'block' : 'none';
   $('btnShare').style.display = (m.photo && navigator.canShare) ? 'block' : 'none';
   lastLoser = m;
@@ -1376,6 +1384,7 @@ function showIntrigue(m){
 }
 function showLoser(m){
   phase = 'done'; if (rec) setTimeout(recStop, 12000);   // запись захватывает отсчёт и показ проигравшего, потом сама останавливается
+  akFinish();
   show('res');
   $('reveal').style.display = 'none'; $('intr').style.display = 'none';
   if (m.intrigue && m.intrigue.length > 1){ $('cd').style.display = 'none'; showIntrigue(m); return; }
@@ -1545,13 +1554,13 @@ function randOut(m){
   else try { mws && mws.send(JSON.stringify({t: 'vote', id: m.id})); } catch(e){}
 }
 function randFinal(m){
-  phase = 'done'; clearTimeout(autoT); if (rec) setTimeout(recStop, 9000);
+  phase = 'done'; clearTimeout(autoT); if (rec) setTimeout(recStop, 9000); akFinish();
   show('res'); $('cd').style.display = 'none'; $('intr').style.display = 'none';
   const me = m.winner === myId;
   $('loserName').textContent = (me ? '🏆 Ты победил(а)!' : '🏆 ' + m.name);
   $('loserImg').src = m.avatar || ''; $('loserWhy').textContent = me ? 'Никто не продержался дольше' : 'Победитель — продержался(-ась) до конца';
   $('loserTime').textContent = 'раунд ' + fmt(m.ms || 0);
-  $('reveal').style.display = 'flex';
+  $('reveal').style.display = 'flex'; akShow();
   $('btnAgain').style.display = 'block'; $('btnAgain').textContent = '🎲 Играть ещё'; $('againHint').textContent = '';
   $('btnShare').style.display = 'none'; $('btnReport').style.display = 'block'; $('btnHome').style.display = 'block'; $('repList').style.display = 'none';
   play('rev'); lastLoser = null;
@@ -1627,13 +1636,13 @@ function recResult(g, cv, f){   // экран «кто улыбнулся» ка
   g.restore(); y += H + gap;
   recText(g, $('loserTime').textContent, cx, y + tagH / 2, 17 * f, 'center', 1, '#a8a8a8', 700);
 }
-function recFrame(){
-  if (!rec) return; rec.n++;
-  const {cv, g} = rec, grid = $('grid');
-  if ($('game').classList.contains('on') && (rec.n % 8 === 1 || !recRects.length)){   // раскладку плиток меряем раз в ~0,5 с — замер дёргает перерасчёт страницы
+function recFrame(o = rec){   // o — запись (rec) или автоклип (ak): одна и та же картинка
+  if (!o) return; o.n++;
+  const {cv, g} = o, grid = $('grid');
+  if ($('game').classList.contains('on') && (o.n % 8 === 1 || !recRects.length)){   // раскладку плиток меряем раз в ~0,5 с — замер дёргает перерасчёт страницы
     const gr = grid.getBoundingClientRect();
     // размер холста записи НЕ меняем: кодировщик держит первый размер кадра и сплющивает новый. Сетку вписываем в 540×960 с полями
-    if (gr.width && gr.height){ const K = rec.K = Math.min(REC_W / gr.width, REC_H / gr.height), ox = (REC_W - gr.width * K) / 2, oy = (REC_H - gr.height * K) / 2;
+    if (gr.width && gr.height){ const K = o.K = Math.min(REC_W / gr.width, REC_H / gr.height), ox = (REC_W - gr.width * K) / 2, oy = (REC_H - gr.height * K) / 2;
       recRects = [...grid.children].map(t => { const r = t.getBoundingClientRect(); return {t, x: ox + (r.left - gr.left) * K, y: oy + (r.top - gr.top) * K, w: r.width * K, h: r.height * K}; }); }
   }
   g.fillStyle = '#000'; g.fillRect(0, 0, cv.width, cv.height);
@@ -1643,14 +1652,14 @@ function recFrame(){
     if (id === 'me') ok = recDrawCover(g, maskId && outCv ? outCv : $('cam'), r.x, r.y, r.w, r.h, !(maskId && outCv) ? true : true);
     else if (r.t.classList.contains('live') && vid) ok = recDrawCover(g, vid, r.x, r.y, r.w, r.h, true);
     else if (fb && fb.naturalWidth) ok = recDrawCover(g, fb, r.x, r.y, r.w, r.h, true);
-    const last = rec.last.get(r.t);   // нет свежего кадра (экран итога скрыл видео) — держим последний удачный
-    if (ok){ if (!rec.n || rec.n % 5 === 0){ const c = last || document.createElement('canvas'); c.width = Math.max(1, Math.round(r.w)); c.height = Math.max(1, Math.round(r.h)); c.getContext('2d').drawImage(cv, r.x, r.y, r.w, r.h, 0, 0, c.width, c.height); rec.last.set(r.t, c); } }
+    const last = o.last.get(r.t);   // нет свежего кадра (экран итога скрыл видео) — держим последний удачный
+    if (ok){ if (!o.n || o.n % 5 === 0){ const c = last || document.createElement('canvas'); c.width = Math.max(1, Math.round(r.w)); c.height = Math.max(1, Math.round(r.h)); c.getContext('2d').drawImage(cv, r.x, r.y, r.w, r.h, 0, 0, c.width, c.height); o.last.set(r.t, c); } }
     else if (last) g.drawImage(last, r.x, r.y, r.w, r.h);
     else { g.fillStyle = '#111'; g.fillRect(r.x, r.y, r.w, r.h); }
     if (r.t.classList.contains('out')){ g.fillStyle = '#000a'; g.fillRect(r.x, r.y, r.w, r.h); recText(g, '😂 выбыл(а)', r.x + r.w / 2, r.y + r.h / 2, Math.max(14, r.w / 12)); }
     recText(g, r.t.querySelector('.tname') ? r.t.querySelector('.tname').textContent : '', r.x + 10, r.y + r.h - 16, Math.max(12, Math.min(17, r.w / 14)), 'left', 1, '#fff', 700);
   }
-  const f = Math.max(0.6, rec.K || 1);
+  const f = Math.max(0.6, o.K || 1);
   if ($('game').classList.contains('on')){
     if ($('clock').textContent) recClock(g, $('clock').textContent, cv.width / 2, 26 * f, 18 * f);
     if ($('prep').style.display !== 'none' && $('prep').textContent) recBig(g, $('prep').textContent, cv.width / 2, cv.height / 2, 150 * f);
@@ -1664,25 +1673,27 @@ function recFrame(){
     }
   }
 }
-function recTapAudio(){
+function recTapAudio(o = rec, dest = recDest){
   // голоса игроков: напрямую пришедшие потоки + мой микрофон; звуки игры и PCM — через outNode()
   for (const [id, st] of remote){
-    if (rec.srcs.has(st) || !st.getAudioTracks().length) continue;
+    if (o.srcs.has(st) || !st.getAudioTracks().length) continue;
     // копия трека: запись не перехватывает звук, который играет в плитке (на iOS источник WebAudio на живом потоке его глушит)
-    try { const cl = st.getAudioTracks()[0].clone(), src = actx.createMediaStreamSource(new MediaStream([cl])); src.cl = cl; src.connect(recDest); rec.srcs.set(st, src); } catch(e){}
+    try { const cl = st.getAudioTracks()[0].clone(), src = actx.createMediaStreamSource(new MediaStream([cl])); src.cl = cl; src.connect(dest); o.srcs.set(st, src); } catch(e){}
   }
-  if (mic && !rec.srcs.has(mic)){ try { const src = actx.createMediaStreamSource(mic); src.connect(recDest); rec.srcs.set(mic, src); } catch(e){} }   // сам микрофон: «выкл» — тишина и в записи
+  if (mic && !o.srcs.has(mic)){ try { const src = actx.createMediaStreamSource(mic); src.connect(dest); o.srcs.set(mic, src); } catch(e){} }   // сам микрофон: «выкл» — тишина и в записи
+}
+function recTypes(){
+  // телефоны (iOS, Android) пишут mp4 аппаратным кодеком; в десктопном Chrome mp4-кодировщик бывает программным и подвешивает камеру — там webm
+  const mp4 = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4'], webm = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
+  const types = IOS || /Android/i.test(navigator.userAgent) ? [...mp4, ...webm] : [...webm, ...mp4];
+  return types.map((t, i) => [t, i]).filter(([t]) => window.MediaRecorder && MediaRecorder.isTypeSupported(t) && (QS.get('recmime') !== 'webm' || t.includes('webm')));
 }
 async function recStart(from){
   if (rec || !shop.vip || !INIT_DATA()) return;
   unlockAudio(); if (!actx) return toast('Звук не включился — нажми ещё раз');
   const cv = document.createElement('canvas'); cv.width = REC_W; cv.height = REC_H;
   recDest = actx.createMediaStreamDestination(); recTap = null;
-  // телефоны (iOS, Android) пишут mp4 аппаратным кодеком; в десктопном Chrome mp4-кодировщик бывает программным и подвешивает камеру — там webm
-  const mp4 = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4'], webm = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
-  const types = IOS || /Android/i.test(navigator.userAgent) ? [...mp4, ...webm] : [...webm, ...mp4];
-  const okT = types.map((t, i) => [t, i]).filter(([t]) => window.MediaRecorder && MediaRecorder.isTypeSupported(t) && (QS.get('recmime') !== 'webm' || t.includes('webm')));
-  const pick = okT.find(([t, i]) => i >= (from || 0));
+  const okT = recTypes(), pick = okT.find(([t, i]) => i >= (from || 0));
   if (!pick) return toast('Этот телефон не умеет записывать видео');
   const [mime, ti] = pick;
   const stream = new MediaStream([...cv.captureStream(15).getVideoTracks(), ...recDest.stream.getAudioTracks()]);
@@ -1730,6 +1741,124 @@ async function recUpload(r){
   } catch(e){ toast(ERR[e.message] || 'Не получилось отправить запись'); window.__lastRec.err = e.message; }
 }
 $('btnRec').onclick = () => rec ? recStop() : recStart();
+
+// ---------- автоклип проигрыша (Гео 30.10: «запись последних 15 секунд»): у каждого игрока весь раунд пишется та же картинка, что и в записи
+// (сетка игроков, своя плитка — уже с маской, голоса и звуки игры). Один кодировщик пишет отрезки по 15 с; новый стартует до остановки старого.
+// При проигрыше: прошлый отрезок + текущий (15–30 с), сервер склеивает и срезает до последних 15 с (/rec: {"t":"part"}, ss/len), превью — сразу из памяти.
+// Отрезки MediaRecorder, а не кольцо кусков по 1 с: куски после первого без заголовка и не с ключевого кадра — их нельзя склеить в начале клипа.
+const AK_LEN = 15, AK_SEG = 15000, AK_ON = !QS.has('noak') && !!window.MediaRecorder;
+let ak = null, akClip = null;
+function akSeg(){
+  const mr = new MediaRecorder(ak.stream, {mimeType: ak.mime, videoBitsPerSecond: 900000, audioBitsPerSecond: 96000});
+  const sg = {mr, chunks: [], t0: Date.now(), t1: 0};
+  mr.ondataavailable = ev => { if (ev.data && ev.data.size) sg.chunks.push(ev.data); };
+  sg.done = new Promise(res => { mr.onstop = () => { sg.t1 = sg.t1 || Date.now(); res(); }; mr.onerror = ev => { window.__akErr = String(ev && ev.error || ev) + ' ' + ak?.mime; sg.t1 = sg.t1 || Date.now(); res(); }; });
+  mr.start(1000); return sg;
+}
+function akStart(){
+  if (!AK_ON || ak) return;
+  const types = recTypes(); if (!types.length) return;
+  const cv = document.createElement('canvas'); cv.width = REC_W; cv.height = REC_H;
+  let zero = null;
+  if (actx){ akDest = actx.createMediaStreamDestination(); recTap = null;
+    // без входа назначение звука в Chrome молчит без сэмплов — и кодировщик webm ждёт звук, не выдавая и видео: подаём постоянную тишину
+    try { zero = actx.createConstantSource(); zero.offset.value = 0; zero.connect(akDest); zero.start(); } catch(e){ zero = null; } }
+  const stream = new MediaStream([...cv.captureStream(15).getVideoTracks(), ...(akDest ? akDest.stream.getAudioTracks() : [])]);
+  ak = {cv, g: cv.getContext('2d'), stream, zero, mime: types[0][0], srcs: new Map(), last: new Map(), n: 0, K: 1, prev: null, cur: null};
+  try { ak.cur = akSeg(); } catch(e){ window.__akErr = String(e); akDrop(); return; }
+  ak.iv = setInterval(() => {
+    if (rec && rec.n) ak.g.drawImage(rec.cv, 0, 0); else recFrame(ak);   // идёт ручная запись — берём её готовый кадр, сетку второй раз не рисуем
+    if (akDest) recTapAudio(ak, akDest);
+    if (Date.now() - ak.cur.t0 >= AK_SEG){ let sg; try { sg = akSeg(); } catch(e){ return; } const old = ak.cur; ak.cur = sg; old.t1 = Date.now(); try { old.mr.stop(); } catch(e){} ak.prev = old; }
+  }, 66);
+}
+function akRelease(a){
+  for (const src of a.srcs.values()) try { src.disconnect(); if (src.cl) src.cl.stop(); } catch(e){}
+  for (const t of a.stream.getTracks()) try { t.stop(); } catch(e){}
+  if (a.zero) try { a.zero.stop(); a.zero.disconnect(); } catch(e){}
+  if (ak === a) ak = null; akDest = null; recTap = null;
+}
+function akDrop(){   // раунд прерван — клип не нужен
+  const a = ak; if (!a) return; clearInterval(a.iv);
+  for (const sg of [a.prev, a.cur]) if (sg && sg.mr.state !== 'inactive') try { sg.mr.stop(); } catch(e){}
+  akRelease(a);
+}
+async function akFinish(){
+  const a = ak; if (!a) return; clearInterval(a.iv); ak = null;
+  const tEnd = Date.now(); a.cur.t1 = tEnd; try { a.cur.mr.stop(); } catch(e){}
+  await Promise.all([a.prev && a.prev.done, a.cur.done].filter(Boolean));
+  akRelease(a);
+  const mime = a.mime.split(';')[0];
+  const segs = [a.prev, a.cur].filter(sg => sg && sg.chunks.length).map(sg => ({blob: new Blob(sg.chunks, {type: mime}), d: (sg.t1 - sg.t0) / 1000}));
+  if (!segs.length) return;
+  const total = segs.reduce((x, sg) => x + sg.d, 0), len = Math.min(AK_LEN, total);
+  akClip = {segs, ss: Math.max(0, total - AK_LEN), len, mime, url: '', sent: false};
+  window.__ak = {n: segs.length, durs: segs.map(sg => +sg.d.toFixed(2)), ss: +akClip.ss.toFixed(2), len: +len.toFixed(2), bytes: segs.reduce((x, sg) => x + sg.blob.size, 0), mime, readyMs: Date.now() - tEnd};
+  akShow();
+}
+function akHide(){
+  $('akBox').style.display = 'none'; const v = $('akVid'); v.onended = v.onloadedmetadata = v.ondurationchange = null; v.removeAttribute('src'); v.load();
+  if (akClip) for (const sg of akClip.segs) if (sg.u) URL.revokeObjectURL(sg.u);
+  akClip = null; $('akMsg').textContent = '';
+}
+function akShow(){
+  if (!akClip || $('reveal').style.display !== 'flex' || $('akBox').style.display === 'flex') return;
+  $('akBox').style.display = 'flex'; $('akSend').style.display = INIT_DATA() ? '' : 'none';
+  $('akSend').disabled = $('akSave').disabled = false; $('akSend').textContent = '✈️ В Телеграм'; $('akMsg').textContent = '';
+  const v = $('akVid'), c = akClip, urls = c.segs.map(sg => sg.u || (sg.u = URL.createObjectURL(sg.blob)));
+  let i0 = 0, off = c.ss; while (i0 < c.segs.length - 1 && off >= c.segs[i0].d){ off -= c.segs[i0].d; i0++; }
+  const go = (k, t) => {   // превью по кругу: отрезок за отрезком с точки среза; webm без длительности — сначала «в конец», потом перемотка
+    if (akClip !== c) return;
+    v.onended = () => k + 1 < urls.length ? go(k + 1, 0) : go(i0, off);
+    v.onloadedmetadata = () => {
+      if (t > 0.05){ if (isFinite(v.duration)) v.currentTime = t; else { v.ondurationchange = () => { if (isFinite(v.duration)){ v.ondurationchange = null; v.currentTime = t; } }; v.currentTime = 1e6; } }
+      v.play().catch(() => {});
+    };
+    v.src = urls[k];
+  };
+  go(i0, off);
+}
+const akErr = e => ({size: 'Клип слишком большой', busy: 'Сервер занят, попробуй через минуту', cooldown: 'Подожди 10 секунд', limit: 'Много клипов за час — попробуй позже', start_bot: 'Нажми Start у @' + TG_BOT + ', чтобы бот мог прислать видео', tg: 'Телеграм не принял видео', bad: 'Не получилось', net: 'Нет связи с сервером', initData: 'Нужен Телеграм'})[e];
+async function akUpload(send, again){
+  const c = akClip; if (!c || c.busy) return; c.busy = true;
+  $('akMsg').textContent = send ? 'Отправляю…' : 'Готовлю mp4…'; const t0 = Date.now();
+  try {
+    const ws = new WebSocket((window.__recBase || WS_BASE) + '/rec?initData=' + encodeURIComponent(INIT_DATA())); ws.binaryType = 'arraybuffer';
+    const wait = ms => new Promise((res, rej) => { ws.onmessage = ev => { let m; try { m = JSON.parse(ev.data); } catch(e){ return; } m.t === 'err' ? rej(new Error(m.e)) : res(m); }; ws.onclose = () => rej(new Error('net')); setTimeout(() => rej(new Error('net')), ms); });
+    await wait(15000);
+    for (let k = 0; k < c.segs.length; k++){
+      if (k) ws.send('{"t":"part"}');
+      const buf = await c.segs[k].blob.arrayBuffer();
+      for (let o = 0; o < buf.byteLength; o += 512 * 1024) ws.send(buf.slice(o, o + 512 * 1024));
+    }
+    const fin = wait(90000);
+    ws.send(JSON.stringify({t: 'end', mime: c.mime, dur: c.len, ss: +c.ss.toFixed(2), len: +c.len.toFixed(2), share: true, send}));
+    const m = await fin; try { ws.close(); } catch(e){}
+    if (m.url) c.url = m.url; if (send) c.sent = true;
+    window.__akUp = {send, ms: Date.now() - t0, url: c.url};
+    $('akMsg').textContent = send ? 'Пришлёт бот в личку ✅' : '';
+    return true;
+  } catch(e){
+    window.__akUp = {send, err: e.message};
+    if (e.message === 'cooldown' && !again){ $('akMsg').textContent = 'Секунду…'; c.busy = false; await new Promise(r => setTimeout(r, 10500)); return akUpload(send, true); }
+    $('akMsg').textContent = akErr(e.message) || 'Не получилось';
+  } finally { c.busy = false; }
+}
+function akDl(blob, name){ const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 60000); }
+$('akSend').onclick = async () => { const c = akClip; if (!c || c.sent) return; $('akSend').disabled = true; if (await akUpload(true)){ $('akSend').textContent = '✅ Отправлено'; toast('Клип придёт в личку от бота ✅'); } else $('akSend').disabled = false; };
+$('akSave').onclick = async () => {
+  const c = akClip; if (!c) return;
+  if (INIT_DATA()){
+    if (!c.url) await akUpload(false);
+    if (c.url){
+      if (TG && TG.downloadFile) try { TG.downloadFile({url: c.url, file_name: 'ne-ulybaysya.mp4'}); return; } catch(e){}
+      try { akDl(await (await fetch(c.url)).blob(), 'ne-ulybaysya.mp4'); } catch(e){ window.open(c.url, '_blank'); }
+      return;
+    }
+  }
+  // без сервера (браузер без Телеграма): отрезки как записаны, без среза
+  const ext = c.mime.includes('mp4') ? 'mp4' : 'webm'; c.segs.forEach((sg, k) => akDl(sg.blob, 'ne-ulybaysya_' + (k + 1) + '.' + ext));
+};
 
 function camHelp(e){
   const n = e && e.name, ua = navigator.userAgent;
