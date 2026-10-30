@@ -8,12 +8,13 @@ export const STYLES = {hell: 'Ад', glam: 'Гламур', meme: 'Мемы', ani
 
 // free — бесплатна всегда; vip — золотая рамка, после PAID_FROM открыта только VIP-пользователям (цены и vip держит сервер)
 export const MASKS = [
+  {id: 'baby',     name: 'Бэйби',         style: 'meme', admin: true},   // нейро (maski_nn.js): тест только для админа, в магазин не выставлена
+  {id: 'starik',   name: 'Старик',        style: 'meme', admin: true},
   {id: 'crown',    name: 'Корона',        style: 'hat',   free: true},
   {id: 'wreath',   name: 'Лавр',          style: 'hat'},
   {id: 'hellfire', name: 'Огненная корона', style: 'hell'},
   {id: 'demon',    name: 'Демон',         style: 'hell'},
   {id: 'angel',    name: 'Ангел',         style: 'glam'},
-  {id: 'unicorn',  name: 'Единорог',      style: 'anime'},
   {id: 'deer',     name: 'Олень',         style: 'anime'},
   {id: 'bunny',    name: 'Зайка',         style: 'anime'},
   {id: 'hearts',   name: 'Сердечки',      style: 'glam'},
@@ -22,22 +23,17 @@ export const MASKS = [
   {id: 'clown',    name: 'Клоун',         style: 'meme'},
   {id: 'latex',    name: 'Зайка в латексе', style: 'glam'},
   {id: 'mult',     name: 'Мультяшные глаза', style: 'meme'},
-  {id: 'cyclop',   name: 'Циклоп',        style: 'meme'},
   {id: 'kaki',     name: 'Брови-какашки', style: 'meme'},
   {id: 'ushi',     name: 'Уши-локаторы',  style: 'meme'},
   {id: 'puchi',    name: 'Пучеглазик',    style: 'meme'},
-  {id: 'durshlag', name: 'Дуршлаг',       style: 'hat'},
   {id: 'vertolet', name: 'Кепка-вертолёт', style: 'hat'},
   {id: 'alien',    name: 'Пришелец',      style: 'meme'},
   {id: 'mozg',     name: 'Мегамозг',      style: 'meme'},
   {id: 'spa',      name: 'Спа',           style: 'glam'},
-  {id: 'blin',     name: 'Блин',          style: 'meme'},
-  {id: 'horse',    name: 'Лошадь',        style: 'meme'},
-  {id: 'chin',     name: 'Щелкунчик',     style: 'meme'},
   {id: 'fish',     name: 'Рыба',          style: 'meme'},
 ];
 // маски «на голове» (3D и деформации лица) — maski3d.js, грузится при первом выборе; превью карточек — maski/prev/<id>.webp
-export const MASKS3D = new Set(['crown', 'wreath', 'angel', 'unicorn', 'deer', 'bunny', 'hearts', 'klub', 'fembo', 'clown', 'latex', 'mult', 'cyclop', 'kaki', 'ushi', 'puchi', 'durshlag', 'vertolet', 'alien', 'mozg', 'spa', 'blin', 'horse', 'chin', 'fish']);
+export const MASKS3D = new Set(['crown', 'wreath', 'angel', 'deer', 'bunny', 'hearts', 'klub', 'fembo', 'clown', 'latex', 'mult', 'kaki', 'ushi', 'puchi', 'vertolet', 'alien', 'mozg', 'spa', 'fish']);
 
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
 const P = (lm, i, w, h) => ({x: lm[i].x * w, y: lm[i].y * h});
