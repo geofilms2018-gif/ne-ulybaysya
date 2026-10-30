@@ -22,9 +22,9 @@ const BAND = {
   unicorn: {file: 'unicorn', cx: 100, yt: 190, yw: 290, a: 98.5, ok: 0.85},
   deer:    {file: 'deer',    cx: 190, yt: 200, yw: 300, a: 97.5, ok: 0.8},
   bunny:   {file: 'bunny',   cx: 160, yt: 222, yw: 330, a: 101.5, ok: 0.75},
-  hearts:  {file: 'hearts',  cx: 180, yt: 133, yw: 240, a: 104.5, ok: 0.75, lift: 2.2},
-  klub:    {file: 'klub',    cx: 160, yt: 178, yw: 280, a: 102.5, ok: 0.45, lift: 0.8, text: {lines: ['КЛУБ', 'БЕЗ БАБ'], cx: 159.5, cy: 82.5, bw: 285, bh: 140, ang: 0}},
-  fembo:   {file: 'fembo',   cx: 165, yt: 189, yw: 290, a: 98.5, ok: 0.45, lift: 0.8, text: {lines: ['ФЕМБОЙ'], cx: 159.5, cy: 97, bw: 255, bh: 110, ang: -0.129}},
+  hearts:  {file: 'hearts',  cx: 180, yt: 133, yw: 240, a: 104.5, ok: 0.75},
+  klub:    {file: 'klub',    cx: 160, yt: 178, yw: 280, a: 102.5, ok: 0.45, card: 164, text: {lines: ['КЛУБ', 'БЕЗ БАБ'], cx: 159.5, cy: 82.5, bw: 285, bh: 140, ang: 0}},
+  fembo:   {file: 'fembo',   cx: 165, yt: 189, yw: 290, a: 98.5, ok: 0.45, text: {lines: ['ФЕМБОЙ'], cx: 159.5, cy: 97, bw: 255, bh: 110, ang: -0.129}},
 };
 // маски этого модуля (остальные — 2D в maski.js)
 export const IDS = new Set(['crown', 'wreath', 'angel', ...Object.keys(BAND), 'clown', 'latex', 'mult', 'cyclop', 'kaki', 'ushi', 'puchi', 'durshlag', 'vertolet', 'alien', 'mozg', 'spa', 'blin', 'horse', 'chin', 'fish']);
@@ -121,6 +121,12 @@ async function buildBand(key, G){
       const r = D[o * 4], g2 = D[o * 4 + 1], b2 = D[o * 4 + 2]; if (a < 250 && g2 > b2 + 20 && g2 >= r * 0.9) a = 0; else a = Math.min(a, mn + 40);
       if (y > fy0){ const w = Math.max(0, Math.min(1, (fy1 - y) / (fy1 - fy0))); a *= w * w * (3 - 2 * w); }
       D[o * 4 + 3] = a; }
+    x.putImageData(d, 0, 0); }
+  if (c.card){ // только карточка (Гео 30.10, «Клуб без баб»): обруч и ножки ниже карточки — прочь, ножки на карточке закрашены её белым
+    const d = x.getImageData(0, 0, iw, ih), D = d.data;
+    for (let y = 0; y < ih; y++) for (let xx = 0; xx < iw; xx++){ const o = (y * iw + xx) * 4;
+      if (y > c.card) D[o + 3] = 0;
+      else if (y > c.card - 26 && D[o + 3] > 0 && Math.max(D[o], D[o + 1], D[o + 2]) < 150){ const r = ((c.card - 26) * iw + xx) * 4; D[o] = D[r]; D[o + 1] = D[r + 1]; D[o + 2] = D[r + 2]; D[o + 3] = D[r + 3]; } }
     x.putImageData(d, 0, 0); }
   if (c.text){ const t = c.text, F = '"Arial Black", Impact, Arial, sans-serif'; x.font = `900 100px ${F}`; const mw = Math.max(...t.lines.map(l => x.measureText(l).width)), fs = Math.min(t.bw / mw * 100, t.bh / (t.lines.length * 1.08));
     x.save(); x.translate(t.cx, t.cy); x.rotate(t.ang); x.scale(-1, 1); x.font = `900 ${fs}px ${F}`; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillStyle = '#0b0b0b';
@@ -536,7 +542,7 @@ export function prepare(id){
   return loading = (async () => {
     await loadObj(); initR();
     const G = new THREE.Group();
-    const hat = [].concat(ASSET[id] || []).some(a => a.kind === 'hat'), onTop = id === 'crown' || id === 'angel' || BAND[id] || hat;
+    const hat = [].concat(ASSET[id] || []).some(a => a.kind === 'hat'), onTop = id === 'crown' || id === 'angel' || hat;   // ободки — без посадки по силуэту (Гео 30.10: «раньше сидели лучше, сейчас обрезается»)
     if (onTop || id === 'alien' || id === 'mozg' || id === 'spa') await segInit();
     if (id === 'crown') buildCrown(G);
     else if (id === 'angel') await buildHalo(G);
