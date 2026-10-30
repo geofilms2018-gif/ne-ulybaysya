@@ -2157,6 +2157,7 @@ $('btnBrowser').onclick = () => {
   const name = $('name').value.trim(), q = new URLSearchParams();
   if (/^[A-Z]{4}$/.test(code)) q.set('r', code);
   if (name) q.set('n', name);   // имя переносим в браузер вместе с кодом
+  if (IS_ADMIN) q.set('allmasks', '1');   // в браузере нет данных Телеграма — тест-маски админа иначе пропадут
   const url = location.origin + location.pathname + (q.toString() ? '?' + q : '');
   if (TG) TG.openLink(url); else location.href = url;
 };
