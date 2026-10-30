@@ -22,9 +22,9 @@ const BAND = {
   unicorn: {file: 'unicorn', cx: 100, yt: 190, yw: 290, a: 98.5, ok: 0.85},
   deer:    {file: 'deer',    cx: 190, yt: 200, yw: 300, a: 97.5, ok: 0.8},
   bunny:   {file: 'bunny',   cx: 160, yt: 222, yw: 330, a: 101.5, ok: 0.75},
-  hearts:  {file: 'hearts',  cx: 180, yt: 133, yw: 240, a: 104.5, ok: 0.75},
-  klub:    {file: 'klub',    cx: 160, yt: 178, yw: 280, a: 102.5, ok: 0.45, card: 164, text: {lines: ['КЛУБ', 'БЕЗ БАБ'], cx: 159.5, cy: 82.5, bw: 285, bh: 140, ang: 0}},
-  fembo:   {file: 'fembo',   cx: 165, yt: 189, yw: 290, a: 98.5, ok: 0.45, text: {lines: ['ФЕМБОЙ'], cx: 159.5, cy: 97, bw: 255, bh: 110, ang: -0.129}},
+  hearts:  {file: 'hearts',  cx: 180, yt: 133, yw: 240, a: 104.5, ok: 0.75, top: 'sq'},
+  klub:    {file: 'klub',    cx: 160, yt: 178, yw: 280, a: 102.5, ok: 0.45, tr: 12, top: 'post', cardB: 164, text: {lines: ['КЛУБ', 'БЕЗ БАБ'], cx: 159.5, cy: 82.5, bw: 285, bh: 140, ang: 0}},
+  fembo:   {file: 'fembo',   cx: 165, yt: 196, yw: 290, a: 98.5, ok: 0.45, tr: 4, top: 'post', cardB: 170, text: {lines: ['ФЕМБОЙ'], cx: 159.5, cy: 97, bw: 255, bh: 110, ang: -0.129}},
 };
 // маски этого модуля (остальные — 2D в maski.js)
 export const IDS = new Set(['crown', 'wreath', 'angel', ...Object.keys(BAND), 'clown', 'latex', 'mult', 'cyclop', 'kaki', 'ushi', 'puchi', 'durshlag', 'vertolet', 'alien', 'mozg', 'spa', 'blin', 'horse', 'chin', 'fish']);
@@ -111,7 +111,7 @@ async function buildFace(a, G){
 async function buildBand(key, G){
   const c = BAND[key], img = new Image(); img.crossOrigin = 'anonymous'; img.src = MBASE + c.file + '.webp'; await img.decode();
   const iw = img.naturalWidth, ih = img.naturalHeight, cv = document.createElement('canvas'); cv.width = iw; cv.height = ih; const x = cv.getContext('2d', {willReadFrequently: true}); x.drawImage(img, 0, 0);
-  const k = HX / c.a, ky = k, ok = c.ok || 1, TR = 40, sx = py => py >= c.yt ? 1 : py <= c.yt - TR ? ok : ok + (1 - ok) * (py - c.yt + TR) / TR;
+  const k = HX / c.a, ky = k, ok = c.ok || 1, TR = c.tr || 40, sx = py => py >= c.yt ? 1 : py <= c.yt - TR ? ok : ok + (1 - ok) * (py - c.yt + TR) / TR;
   const Y = py => py >= c.yt ? HT - (py - c.yt) * ky : py >= c.yt - TR ? HT + (c.yt - py) * k * (1 + sx(py)) / 2 : HT + TR * k * (1 + ok) / 2 + (c.yt - TR - py) * k * ok;
   { // ножки гаснут мягким градиентом; кайма вырезки (полупрозрачные жёлто-зелёные пиксели) — прочь, край сжат на 1 px
     const d = x.getImageData(0, 0, iw, ih), D = d.data, A0 = new Uint8ClampedArray(iw * ih); for (let i = 0; i < iw * ih; i++) A0[i] = D[i * 4 + 3];
@@ -122,11 +122,11 @@ async function buildBand(key, G){
       if (y > fy0){ const w = Math.max(0, Math.min(1, (fy1 - y) / (fy1 - fy0))); a *= w * w * (3 - 2 * w); }
       D[o * 4 + 3] = a; }
     x.putImageData(d, 0, 0); }
-  if (c.card){ // только карточка (Гео 30.10, «Клуб без баб»): обруч и ножки ниже карточки — прочь, ножки на карточке закрашены её белым
-    const d = x.getImageData(0, 0, iw, ih), D = d.data;
-    for (let y = 0; y < ih; y++) for (let xx = 0; xx < iw; xx++){ const o = (y * iw + xx) * 4;
-      if (y > c.card) D[o + 3] = 0;
-      else if (y > c.card - 26 && D[o + 3] > 0 && Math.max(D[o], D[o + 1], D[o + 2]) < 150){ const r = ((c.card - 26) * iw + xx) * 4; D[o] = D[r]; D[o + 1] = D[r + 1]; D[o + 2] = D[r + 2]; D[o + 3] = D[r + 3]; } }
+  if (c.card){ // только карточка (Гео 30.10, «Клуб без баб», «Фембой»): тёмное в картинке — обруч и ножки; на карточке закрашиваем её белым, вне — прочь
+    const d = x.getImageData(0, 0, iw, ih), D = d.data, dark = o => D[o + 3] > 0 && Math.max(D[o], D[o + 1], D[o + 2]) < 150, lit = o => D[o + 3] > 200 && Math.min(D[o], D[o + 1], D[o + 2]) > 150;
+    for (let y = 0; y < ih; y++) for (let xx = 0; xx < iw; xx++){ const o = (y * iw + xx) * 4; if (!dark(o)) continue;
+      let L = -1, Rr = -1; for (let k = 1; k <= 24; k++){ if (L < 0 && xx - k >= 0 && lit(o - k * 4)) L = o - k * 4; if (Rr < 0 && xx + k < iw && lit(o + k * 4)) Rr = o + k * 4; }
+      if (L >= 0 && Rr >= 0){ D[o] = D[L]; D[o + 1] = D[L + 1]; D[o + 2] = D[L + 2]; D[o + 3] = D[L + 3]; } else D[o + 3] = 0; }
     x.putImageData(d, 0, 0); }
   if (c.text){ const t = c.text, F = '"Arial Black", Impact, Arial, sans-serif'; x.font = `900 100px ${F}`; const mw = Math.max(...t.lines.map(l => x.measureText(l).width)), fs = Math.min(t.bw / mw * 100, t.bh / (t.lines.length * 1.08));
     x.save(); x.translate(t.cx, t.cy); x.rotate(t.ang); x.scale(-1, 1); x.font = `900 ${fs}px ${F}`; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillStyle = '#0b0b0b';
@@ -136,6 +136,7 @@ async function buildBand(key, G){
   for (let i = 0; i < p.count; i++){ const u = uv.getX(i), v = uv.getY(i), px = u * iw, py = (1 - v) * ih; p.setXYZ(i, (px - c.cx) * k * sx(py), Y(py) - HC, 0); }
   const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({map: tex, transparent: true, alphaTest: 0.03, side: THREE.DoubleSide})); m.renderOrder = 1;
   const grp = new THREE.Group(); grp.position.set(0, HC + (c.lift || 0), -4.0); grp.rotation.x = TILT; grp.add(m); G.add(grp);
+  if (c.top){ G.userData.topGrp = grp; G.userData.topY = Y(0) - HC; G.userData.topSq = c.top; G.userData.sqPost = c.cardB ? Y(c.cardB) - HT : 0; if (c.top === 'sq' || c.top === 'post'){ G.userData.sqGeo = geo; G.userData.sqY0 = Float32Array.from({length: p.count}, (_, i) => p.getY(i)); G.userData.sqHB = HT - HC; } }   // верх картинки — держим в кадре
 }
 // корона (прежняя из игры, кодом, 1:1 по пикселям): карточка на макушке 3D-головы
 function buildCrown(G){
@@ -572,6 +573,14 @@ export function draw(g, id, lm, M){
     const hz = R.parts.userData.hat ? HAT_Z * Math.max(0, -dy) : 0;   // шапка, опускаясь по лбу, выходит вперёд — поля не уходят под лоб
     R.parts.position.y = R.parts.userData.hat ? Math.max(-0.6, dy) : dy;   // шапку ниже −0,6 см не опускаем: козырёк не на бровях
     R.parts.position.x = top ? FIT.dx || 0 : 0; R.parts.position.z = hz; R.parts.scale.x = sx; R.skull.scale.x = 7.7 * sx; R.skull.scale.y = 10.6 + dy / 2; R.skull.position.y = 1.2 + dy / 2; }
+  if (R.parts.userData.topGrp){ const tg = R.parts.userData.topGrp, ty = R.parts.userData.topY, m0 = H * 0.02;   // верх маски за кадром — опускаем всю маску по голове, пока не влезет (Гео 30.10)
+    const ud = R.parts.userData, sq = v => { const pp = ud.sqGeo.attributes.position, hb = ud.sqHB, L = ud.sqPost; for (let i = 0; i < pp.count; i++){ const y = ud.sqY0[i];   // sq: v — масштаб над обручем; post: v — на сколько см опустить карточку (ножки короче, не больше их длины)
+      pp.setY(i, y <= hb ? y : ud.topSq === 'post' ? (y >= hb + L ? y - v : hb + (y - hb) * (1 - v / L)) : hb + (y - hb) * v); } pp.needsUpdate = true; };
+    R.parts.position.y = 0; if (ud.topSq) sq(ud.topSq === 'post' ? 0 : 1); R.scene.updateMatrixWorld(true);
+    const py = h => { _q.set(0, h, 0); tg.localToWorld(_q); _q.project(R.camera); return (1 - _q.y) / 2 * H; }, y0 = py(ty), ppc = py(ty - 1) - y0;
+    if (ud.topSq === 'post'){ if (y0 < m0 && ppc > 0.5) sq(Math.min(ud.sqPost * 0.95, (m0 - y0) / ppc)); }   // карточка: опускаем по ножкам до обруча, обруч на лбу
+    else if (ud.topSq){ const yh = py(ud.sqHB); if (y0 < m0 && yh - y0 > 1) sq(Math.max(0.3, (yh - m0) / (yh - y0))); }   // сердечки: обруч на месте, ножки короче
+    else if (y0 < m0 && ppc > 0.5) R.parts.position.y = -Math.min(6, (m0 - y0) / ppc); }
   const gg = R.parts.userData.googly;
   if (gg){ const dn = new THREE.Vector3(0, -1, 0).transformDirection(new THREE.Matrix4().copy(R.head.matrix).invert());   // «вниз» в системе головы
     gg.forEach((e, j) => { const a = Math.atan2(dn.y, dn.x) + (j ? 0.55 : -0.35), r = e.max * 0.95; e.pm.position.x = e.x0 + Math.cos(a) * r; e.pm.position.y = e.y0 + Math.sin(a) * r; }); }

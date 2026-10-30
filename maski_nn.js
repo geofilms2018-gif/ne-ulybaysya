@@ -4,13 +4,20 @@
 const U = f => new URL(f, import.meta.url).href;   // модели рядом с модулем: страница может быть и в v2/
 const S = 256, FILE = {baby: U('models/child.onnx'), starik: U('models/old.onnx')};
 export const IDS = new Set(Object.keys(FILE));
-let ortP = null; const sess = {}, sessP = {};
-function loadOrt(){
-  return ortP || (ortP = new Promise((ok, bad) => { const s = document.createElement('script'); s.src = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/ort.webgpu.min.js'; s.onload = () => ok(window.ort); s.onerror = bad; document.head.appendChild(s); }));
+// сеть кожи считается в воркере (nn_worker.js): на iPhone без WebGPU кадр ~0,2 с — в главном потоке игра падала до 3–4 к/с
+const sess = {}, sessP = {}, wait = {}, failed = {};
+let W = null;
+function worker(){
+  if (W) return W;
+  W = new Worker(U('nn_worker.js'));
+  W.onmessage = ({data: m}) => { const w = wait[m.t === 'loaded' ? 'load_' + m.id : 'run']; if (!w) return; delete wait[m.t === 'loaded' ? 'load_' + m.id : 'run']; m.t === 'err' ? w.bad(new Error(m.e)) : w.ok(m); };
+  W.onerror = e => { console.warn('maski_nn воркер', e.message || e); for (const k in wait){ wait[k].bad(new Error('worker')); delete wait[k]; } };
+  return W;
 }
+const ask = (k, msg, tr) => new Promise((ok, bad) => { wait[k] = {ok, bad}; worker().postMessage(msg, tr || []); });
 export function prepare(id){
-  if (!FILE[id]) return Promise.resolve(); meshP;
-  return sessP[id] || (sessP[id] = loadOrt().then(ort => ort.InferenceSession.create(FILE[id], {executionProviders: navigator.gpu ? ['webgpu', 'wasm'] : ['wasm']})).then(s => sess[id] = s).catch(e => { sessP[id] = null; console.warn('maski_nn', id, e); }));
+  if (!FILE[id] || failed[id] > 2) return Promise.resolve(); meshP;   // сеть не встала трижды — остаёмся на варпе
+  return sessP[id] || (sessP[id] = ask('load_' + id, {t: 'load', id, url: FILE[id]}).then(() => sess[id] = true).catch(e => { sessP[id] = null; failed[id] = (failed[id] || 0) + 1; stat.err = String(e.message || e); console.warn('maski_nn', id, e); }));
 }
 const C = document.createElement('canvas'); C.width = C.height = S; const cx = C.getContext('2d', {willReadFrequently: true});
 const R = document.createElement('canvas'); R.width = R.height = S; const rx = R.getContext('2d');
@@ -23,7 +30,6 @@ function quad(P){   // как idei/baby_ml/prep.py
   return {q0: [c[0] - x[0] - y[0], c[1] - x[1] - y[1]], ex: [2 * x[0] / S, 2 * x[1] / S], ey: [2 * y[0] / S, 2 * y[1] / S]};
 }
 const GUBY = [61, 146, 91, 181, 84, 17, 314, 405, 321, 375, 291, 409, 270, 269, 267, 0, 37, 39, 40, 185];
-const RT = document.createElement('canvas'), rtx = RT.getContext('2d');
 let busy = false, ready = null, sm = null, lastId = '';
 // ---------- варп формы (гибрид): смещения 478 точек из пар базы (idei/baby_ml/disp.py), меш MediaPipe + кольцо без сдвига вокруг овала ----------
 const DK = {baby: 'child', starik: 'old'}, GAIN = {baby: 1.0, starik: 1.0}, FORMA = {baby: 1.0, starik: 1.5}, LIPS = new Set([0, 13, 14, 17, 37, 39, 40, 61, 78, 80, 81, 82, 84, 87, 88, 91, 95, 146, 178, 181, 185, 191, 267, 269, 270, 291, 308, 310, 311, 312, 314, 317, 318, 321, 324, 375, 402, 405, 409, 415]);
@@ -62,7 +68,8 @@ function forma(id, loc, k){
 }
 const warp = {gain: null, forma: null};   // для тестов: NN.warp.gain = 0 — без варпа
 function warpDraw(g, id, P, v){
-  if (!MESH || !DISP || !DISP[DK[id]]) return; if (!gl) glInit(); if (!gl) return;
+  if (!MESH || !DISP || !DISP[DK[id]]){ stat.noMesh = (stat.noMesh || 0) + 1; return; } if (!gl) glInit(); if (!gl){ stat.noGl = (stat.noGl || 0) + 1; return; }
+  if (gl.isContextLost()){ stat.lost = (stat.lost || 0) + 1; return; } stat.warp = (stat.warp || 0) + 1;
   const W = g.canvas.width, H = g.canvas.height, d = DISP[DK[id]], G = warp.gain ?? GAIN[id];
   if (GLC.width !== W || GLC.height !== H){ GLC.width = W; GLC.height = H; }
   const eL = P[468], eR = P[473], ox = (eL.x + eR.x) / 2, oy = (eL.y + eR.y) / 2, iod = Math.hypot(eR.x - eL.x, eR.y - eL.y), xa = [(eR.x - eL.x) / iod, (eR.y - eL.y) / iod];
@@ -89,20 +96,21 @@ function warpDraw(g, id, P, v){
   g.drawImage(GLC, 0, 0);
 }
 async function infer(id){
-  const px = cx.getImageData(0, 0, S, S).data, inp = new Float32Array(3 * S * S);
-  for (let i = 0; i < S * S; i++){ inp[i] = px[i * 4] / 127.5 - 1; inp[S * S + i] = px[i * 4 + 1] / 127.5 - 1; inp[2 * S * S + i] = px[i * 4 + 2] / 127.5 - 1; }
-  const y = (await sess[id].run({x: new window.ort.Tensor('float32', inp, [1, 3, S, S])})).y.data, im = rx.createImageData(S, S);
-  for (let i = 0; i < S * S; i++){ im.data[i * 4] = (y[i] + 1) * 127.5; im.data[i * 4 + 1] = (y[S * S + i] + 1) * 127.5; im.data[i * 4 + 2] = (y[2 * S * S + i] + 1) * 127.5; im.data[i * 4 + 3] = 255; }
+  const px = cx.getImageData(0, 0, S, S).data.buffer;
+  const m = await ask('run', {t: 'run', id, px}, [px]), im = new ImageData(new Uint8ClampedArray(m.px), S, S);
   rx.globalCompositeOperation = 'source-over'; rx.putImageData(im, 0, 0); rx.globalCompositeOperation = 'destination-in'; rx.drawImage(MK, 0, 0);
   ready = id;
 }
 function zhivoyRot(g, P, v){   // рот и губы — всегда живой кадр (правило Гео): внешний контур губ, раздут, мягкий край
+  // без filter и source-in: в игре Safari (iPhone) такая маска накрывала живым видео весь кадр и варп пропадал (Гео 30.10).
+  // Мягкий край — три вложенных контура с разной прозрачностью, каждый через clip
   const W = g.canvas.width, H = g.canvas.height, [sx, sy] = rotSdvig;
-  if (RT.width !== W || RT.height !== H){ RT.width = W; RT.height = H; }
-  const m = GUBY.reduce((s, i) => [s[0] + P[i].x / GUBY.length, s[1] + P[i].y / GUBY.length], [0, 0]), w = Math.hypot(P[61].x - P[291].x, P[61].y - P[291].y);
-  rtx.globalCompositeOperation = 'source-over'; rtx.clearRect(0, 0, W, H); rtx.filter = `blur(${(w * 0.08).toFixed(1)}px)`; rtx.fillStyle = '#fff'; rtx.beginPath();
-  GUBY.forEach((i, k) => { const x = m[0] + (P[i].x - m[0]) * 1.15 + sx, y = m[1] + (P[i].y - m[1]) * 1.25 + sy; k ? rtx.lineTo(x, y) : rtx.moveTo(x, y); }); rtx.fill(); rtx.filter = 'none';
-  rtx.globalCompositeOperation = 'source-in'; rtx.drawImage(v, sx, sy, W, H); g.drawImage(RT, 0, 0);
+  const m = GUBY.reduce((s, i) => [s[0] + P[i].x / GUBY.length, s[1] + P[i].y / GUBY.length], [0, 0]);
+  for (const [kx, ky, a] of [[1.3, 1.45, 0.35], [1.22, 1.35, 0.55], [1.15, 1.25, 1]]){
+    g.save(); g.beginPath();
+    GUBY.forEach((i, k) => { const x = m[0] + (P[i].x - m[0]) * kx + sx, y = m[1] + (P[i].y - m[1]) * ky + sy; k ? g.lineTo(x, y) : g.moveTo(x, y); });
+    g.closePath(); g.clip(); g.globalAlpha = a; g.drawImage(v, sx, sy, W, H); g.restore();
+  }
 }
 export const stat = {n: 0, ms: 0}; export {warp};
 export const net = {on: !/[?&]nnkozha=0/.test(location.search)};   // сеть кожи; ?nnkozha=0 или NN.net.on = false — только варп
